@@ -163,14 +163,30 @@ export default function App() {
   // ela em vez de ler um estado que talvez não esteja preenchido. Ver ADR-001.
   const registroPendente = useRef(new Map());
 
+  // Contador de sessão. Toda escrita de estado que acontece *depois* de um
+  // await compara este número com o que valia quando a operação começou —
+  // é o mesmo cuidado do `let cancelado` no efeito de carga, e existe porque
+  // sair do app não cancela um POST que já saiu. Sem isto, a resposta que
+  // chega depois do logout reinsere a tentativa num app deslogado, e ela
+  // fica esperando a próxima pessoa que entrar neste navegador.
+  const sessaoEpoch = useRef(0);
+
   // Grava no servidor primeiro e só depois no estado: o que aparece na tela
   // como respondido é o que a API confirmou ter gravado.
   const registrar = ({ questaoId, correta, alternativa, tempoSeg }) => {
     setErroSync(null);
+    const epoch = sessaoEpoch.current;
 
     const pendente = (async () => {
       try {
         const tentativa = await registrarTentativa({ questaoId, correta, alternativa, tempoSeg });
+
+        // Saiu enquanto o POST estava no ar: a tentativa foi gravada e
+        // pertence a quem a respondeu, mas não pode voltar para a tela de
+        // quem entrar depois. Devolvemos o valor para quem esperava a
+        // promessa; só o estado da interface fica de fora.
+        if (sessaoEpoch.current !== epoch) return tentativa;
+
         setState((st) => {
           const registro = st.usuarioTentativas[questaoId] || { tentativas: [], desempenho: 'necessita' };
           return {
@@ -199,10 +215,15 @@ export default function App() {
   // separa acertar sabendo de acertar por sorte, e desde a migration 002 tem
   // coluna própria em vez de morrer junto com a sessão.
   const anotarFeedback = async (questaoId, tipo, certeza) => {
+    const epoch = sessaoEpoch.current;
+
     // Espera a gravação que a alternativa disparou: sem o `id` não há o que
     // atualizar no servidor.
     const tentativa = await registroPendente.current.get(questaoId);
     registroPendente.current.delete(questaoId);
+
+    // Mesmo motivo do `registrar`: este await pode ter atravessado um logout.
+    if (sessaoEpoch.current !== epoch) return;
 
     // Atualização otimista. O quiz já avançou para a próxima questão quando
     // esta linha roda — devolver a tela ao estado anterior por causa de um
@@ -248,6 +269,8 @@ export default function App() {
     // estava logado, não à aba. As gravações em curso vão junto — um PATCH
     // resolvido depois do logout escreveria com um token que já não vale.
     registroPendente.current.clear();
+    // E o que já estava no ar não pode voltar para a tela depois daqui.
+    sessaoEpoch.current += 1;
     setState((st) => ({ ...st, usuarioTentativas: {} }));
     setErroSync(null);
     setSessao('ausente');
