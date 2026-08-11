@@ -21,6 +21,21 @@ function contarTentativas(page) {
   });
 }
 
+// A tentativa mais recente do usuário, direto da API. O GET já devolve da
+// mais nova para a mais antiga, então a primeira linha é a que acabou de ser
+// respondida.
+function ultimaTentativa(page) {
+  return page.evaluate(async () => {
+    const token = localStorage.getItem('ma-questoes-token-v1');
+    if (!token) return null;
+    const res = await fetch('/api/tentativas?limite=1', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return (await res.json())[0] || null;
+  });
+}
+
 async function entrar(page) {
   await page.goto('/');
   // Limpar antes de logar: a sessão não pode vazar de um teste para o outro.
@@ -215,6 +230,42 @@ test.describe('MA Questões E2E', () => {
       JSON.parse(localStorage.getItem('ma-questoes-state-v1') || '{}')
     );
     expect(salvoLocal.usuarioTentativas).toBeUndefined();
+  });
+
+  // O critério de pronto da fatia 2. Mesma forma do teste acima, porque o
+  // dado é o mesmo tipo de dado: coletado na tela, gravado no servidor, e a
+  // prova é ele continuar lá depois de o navegador ser esvaziado.
+  test('o "foi chute" sobrevive ao localStorage apagado', async ({ page }) => {
+    await page.click('[data-testid="nav-questoes"]');
+    await page.click('button:has-text("Gerar quiz")');
+
+    const alternativa = page.locator('[data-testid="alt-0"]');
+    await expect(alternativa).toBeVisible();
+    await alternativa.click();
+
+    // O modal "Como você chegou nessa resposta?" abre junto com o POST da
+    // tentativa — clicar aqui é justamente o caso em que o `id` pode ainda
+    // não ter voltado do servidor.
+    await page.click('button:has-text("Foi chute")');
+
+    // Espera o PATCH. Ler pela API e não pela tela: o que importa é o que
+    // ficou gravado, e a tela mostraria o valor otimista de qualquer jeito.
+    await expect.poll(() => ultimaTentativa(page)).toMatchObject({
+      tipo: 'chute',
+      certeza: 30,
+    });
+
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await expect(page.locator('button[type="submit"]')).toBeVisible();
+    await page.fill('input[type="email"]', EMAIL);
+    await page.fill('input[type="password"]', SENHA);
+    await page.click('button[type="submit"]');
+    await expect(page.locator('[data-testid="nav-questoes"]')).toBeVisible();
+
+    // Antes da migration 002 esta linha voltava com tipo e certeza nulos.
+    expect(await ultimaTentativa(page)).toMatchObject({ tipo: 'chute', certeza: 30 });
   });
 
   test('Gerar questões com IA (API)', async ({ page }) => {
