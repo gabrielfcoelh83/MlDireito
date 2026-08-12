@@ -15,7 +15,7 @@ export const NAV = [
 export const PAGE_META = {
   dashboard: { title: 'Olá, Maria!', sub: 'Vamos continuar rumo à aprovação na OAB?' },
   cronograma: { title: 'Cronograma', sub: 'Seu plano de estudos organizado especialmente para você.' },
-  questoes: { title: 'Questões', sub: 'Pratique questões filtradas por disciplina, banca e dificuldade.' },
+  questoes: { title: 'Questões', sub: 'Questões dos Exames de Ordem, com o gabarito oficial da FGV.' },
   simulados: { title: 'Simulados', sub: 'Treine em condições reais de prova.' },
   revisoes: { title: 'Revisões', sub: 'Sua revisão inteligente para fixar o que realmente importa.' },
   desempenho: { title: 'Desempenho', sub: 'Acompanhe sua evolução ao longo do tempo.' },

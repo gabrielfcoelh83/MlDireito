@@ -182,7 +182,9 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2c2530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fonte.rotulo}</div>
-                    <div style={{ fontSize: 10.5, color: '#8b8391' }}>{fonte.total} questões</div>
+                    <div style={{ fontSize: 10.5, color: '#8b8391' }}>
+                      {fonte.total} {fonte.total === 1 ? 'questão' : 'questões'}
+                    </div>
                   </div>
                 </div>
               );
