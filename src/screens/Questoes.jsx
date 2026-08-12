@@ -291,7 +291,7 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
                 )}
                 {current.dificuldade && <span style={{ ...dificuldadePill, marginLeft: 'auto' }}>{current.dificuldade}</span>}
               </div>
-              <div style={{ fontSize: 15, color: '#2c2530', lineHeight: 1.65, marginTop: 16, whiteSpace: 'pre-wrap' }}>{current.enunciado}</div>
+              <div data-testid="enunciado" style={{ fontSize: 15, color: '#2c2530', lineHeight: 1.65, marginTop: 16, whiteSpace: 'pre-wrap' }}>{current.enunciado}</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
                 {alternativas.map((alt) => (
