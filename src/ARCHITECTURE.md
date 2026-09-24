@@ -134,7 +134,8 @@ Regras que o código já garante:
   quem já tinha estado salvo. Com `{...defaults, ...salvo}` a fatia salva
   inteira venceria e o campo novo nunca apareceria para usuário antigo.
 - **Troca de conta**: acontece na abertura e no login, pelo id do token
-  (`contaDoToken` + `estadoDaConta`), sem esperar o perfil voltar da rede.
+  (`contaDoToken` + `estadoDaConta`), sem esperar o perfil voltar da rede. O
+  efeito de perfil repete a troca só se o perfil voltar com outro id.
   Outra conta recomeça do padrão (mantendo só o tema) e recupera os dados da
   conta dela; a mesma conta segue com a tela como estava.
 - **Logout** (`sair`): apaga o token, encerra a sessão (ver abaixo) e zera o
@@ -151,7 +152,9 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
 
 - **Sair não apaga**, e quem entra com outra conta no mesmo navegador não os
   vê na tela. Não é sigilo: a chave de outra conta segue legível nas
-  ferramentas do navegador. A tela de Anotações avisa isso.
+  ferramentas do navegador. A tela de Anotações avisa que as notas ficam no
+  navegador depois de sair e sugere limpar os dados do site em computador
+  compartilhado; favoritos e histórico de simulado não têm aviso.
 - **Na abertura com a mesma conta, a chave vale** para essas três fatias. Com
   duas abas abertas, a desatualizada regrava o estado da interface a cada
   troca de tela; a chave só é gravada quando os dados da conta mudam
@@ -167,18 +170,22 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
 - `registroPendente` — `Map` de questão → promessa do POST da tentativa. O
   quiz não espera a rede; o feedback ("foi chute", "eliminei") espera essa
   promessa porque precisa do `id` que o POST devolve.
-- `sessaoEpoch` — contador de sessão. Toda escrita de estado depois de um
-  `await` confere se a sessão ainda é a mesma, para uma resposta que chega
-  atrasada não aparecer para a próxima pessoa.
+- `sessaoEpoch` — contador de sessão. Toda gravação (`registrar`,
+  `anotarFeedback`, `atualizarNome`, `atualizarConfig`) confere, depois do
+  `await`, se a sessão ainda é a mesma, para uma resposta que chega atrasada
+  não aparecer para a próxima pessoa. As três cargas (perfil, tentativas,
+  acervo) fazem o mesmo com o `let cancelado` do efeito, que vira `true`
+  quando `sessao` muda.
 - `gravacaoDePreferencias` — fila de uma só para os PUT de meta e data da prova
   (`atualizarConfig`): dois PUT soltos podem chegar fora de ordem e o mais
   velho sobrescrever o mais novo. Um PUT que ainda esperava a vez quando a
   sessão acabou não sai. O PUT do nome (`atualizarNome`) corre fora da fila.
 
-`encerrarSessao` é o fim de uma sessão, por "Sair" ou por 401: sobe o
-`sessaoEpoch`, limpa `registroPendente` e o histórico em memória e volta ao
-Login. No 401 a tela fica — quem entra de novo com a mesma conta volta ao que
-estava fazendo; `sair` é que também zera a tela.
+`encerrarSessao` é o fim de uma sessão — por "Sair", por 401 ou por token
+sem payload legível: sobe o `sessaoEpoch`, limpa `registroPendente`, o
+histórico em memória, o perfil e a faixa de erro, e volta ao Login. No 401 a
+tela fica — quem entra de novo com a mesma conta volta ao que estava
+fazendo; `sair` é que também zera a tela.
 
 ---
 
@@ -202,7 +209,7 @@ erro do acervo aparece na própria tela de Questões, com botão de recarregar.
 |---|---|---|
 | `login`, `criarConta` | `POST /api/auth/login`, `/register` | o register já devolve token |
 | `buscarPerfil`, `salvarPerfil` | `GET`/`PUT /api/users/:id` | nome e `profile_data` |
-| `listarTentativas` → `buscarPaginaDeTentativas` | `GET /api/tentativas?limite=1000&paginado=1[&offset=N]` | percorre as páginas até somar `total` (`percorrerPaginas`, teto de 50 páginas), descarta repetidas pelo id, aceita o formato antigo (array) e agrupa por questão, em ordem cronológica. No `App`, a carga é mesclada com o que foi respondido enquanto ela corria (`mesclarTentativas`) |
+| `listarTentativas` → `buscarPaginaDeTentativas` | `GET /api/tentativas?limite=1000&paginado=1[&offset=N]` | percorre as páginas até somar `total` (`percorrerPaginas`, teto de 50 páginas; passando dele, a lista vem cortada e o aviso vai só para o console), descarta repetidas pelo id, aceita o formato antigo (array) e agrupa por questão, em ordem cronológica. No `App`, a carga é mesclada com o que foi respondido enquanto ela corria (`mesclarTentativas`) |
 | `registrarTentativa` | `POST /api/tentativas` | |
 | `anotarFeedbackTentativa` | `PATCH /api/tentativas/:id` | tipo e certeza da resposta |
 | `listarQuestoes` → `buscarPaginaDeQuestoes` | `GET /api/questoes?limite=200&paginado=1[&offset=N]` | percorre as páginas até somar `total`, com teto de 60 páginas (passando dele, a lista vem cortada e o aviso vai só para o console); com `aleatorio`, uma página só; aceita também o formato antigo (array) |
@@ -257,8 +264,8 @@ npm run dev
 | `npm run build` | build de produção | sim |
 | `npm run test:e2e` | Playwright contra `npm run dev` + backend do script acima | sim |
 | `npm run test:api` | rotas de `api/`: recusam pedido sem token e com token inválido; com login no gateway, chamam de verdade a OpenRouter e o DataJud | sim |
-| `npm run test:lib` | todo `tests/*.test.js` menos `api.test.js`, cada um em UTC e em America/Sao_Paulo | sim (job de lint do ci.yml e pr.yml) |
-| `npm run test:estado`, `test:questoes`, `test:paginas` | um arquivo de `test:lib` só, para rodar à mão | via `test:lib` |
+| `npm run test:lib` | todo `tests/*.test.js` menos `api.test.js`, cada um em UTC e em America/Sao_Paulo | sim (job `lint` do ci.yml; job `check-code` do pr.yml) |
+| `npm run test:estado`, `test:questoes`, `test:paginas` | um arquivo de `test:lib` só, para rodar à mão — no fuso da máquina, sem a segunda rodada em São Paulo | via `test:lib` |
 | `npm run test:all` | test:e2e + test:api | nenhum workflow chama |
 | `npm run ci` | lint + test:lib + build — a verificação local, o mesmo que a CI roda sem backend | nenhum workflow chama |
 
@@ -301,6 +308,16 @@ mostrou um dia a menos no Brasil com a CI verde.
    antes de atualizar perde esses dados ao entrar de novo. É estreito, e não
    se repete: a versão atual sempre marca o dono.
 7. **A CI usa Node 20**, que saiu do suporte em 30/04/2026.
+8. **Duas abas da mesma conta, editando** — trocar de tela na aba
+   desatualizada não sobrescreve mais a outra, mas editar dados da conta nela
+   (marcar um favorito, por exemplo) regrava a chave inteira com a versão
+   velha, e a nota criada na outra aba se perde. Não há ouvinte de `storage`
+   para as abas se atualizarem.
+9. **Duas abas com contas diferentes** — o token é um só para o navegador.
+   Se, na aba B, a pessoa sai e entra com a conta Y, a aba A continua
+   mostrando a conta X, mas as gravações dela saem com o token de Y: uma
+   resposta dada na tela de X é gravada na conta Y. Já acontecia antes da
+   chave por conta; a mesma falta de ouvinte de `storage` está na origem.
 
 ### Limpeza
 
