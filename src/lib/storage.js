@@ -26,19 +26,23 @@ export function loadState(defaults) {
     const parsed = JSON.parse(raw);
     if (!ehObjetoSimples(parsed)) return defaults;
 
-    const resultado = { ...defaults };
-
-    for (const [chave, valor] of Object.entries(parsed)) {
-      const padrao = defaults[chave];
-      resultado[chave] = ehObjetoSimples(padrao) && ehObjetoSimples(valor)
-        ? { ...padrao, ...valor }
-        : valor;
-    }
-
-    return resultado;
+    return mesclarComPadrao(defaults, parsed);
   } catch {
     return defaults;
   }
+}
+
+function mesclarComPadrao(defaults, salvo) {
+  const resultado = { ...defaults };
+
+  for (const [chave, valor] of Object.entries(salvo)) {
+    const padrao = defaults[chave];
+    resultado[chave] = ehObjetoSimples(padrao) && ehObjetoSimples(valor)
+      ? { ...padrao, ...valor }
+      : valor;
+  }
+
+  return resultado;
 }
 
 export function saveState(state) {
@@ -50,11 +54,12 @@ export function saveState(state) {
 }
 
 /**
- * De quem é o estado que está salvo neste navegador.
+ * Apaga o estado da interface — não os dados da conta, que têm chave própria
+ * (ver abaixo).
  *
  * Sem isto, sair de uma conta e entrar em outra no mesmo computador mantinha
- * favoritos, anotações e histórico de simulado da pessoa anterior — o app
- * mostrava dados de alguém sem nunca ter mentido explicitamente sobre isso.
+ * o histórico de simulado e as telas da pessoa anterior — o app mostrava
+ * dados de alguém sem nunca ter mentido explicitamente sobre isso.
  */
 export function limparEstado() {
   try {
@@ -62,4 +67,71 @@ export function limparEstado() {
   } catch {
     // idem: nada a fazer, e não vale derrubar a tela
   }
+}
+
+// ---------------------------------------------------------------------------
+// Dados da conta
+// ---------------------------------------------------------------------------
+//
+// Favoritos e anotações não têm rota na API: moram neste navegador. Enquanto
+// moravam só no estado da interface, o logout tinha de escolher entre
+// apagá-los — e a pessoa perdia o que tinha escrito ao clicar em "Sair" — e
+// mantê-los, mostrando-os a quem entrasse depois no mesmo computador. Com uma
+// chave por conta, nenhuma das duas coisas acontece.
+//
+// Não é sigilo: a chave de outra conta continua legível nas ferramentas do
+// navegador. O que ela garante é que a tela de uma conta não mostra o que é de
+// outra. Sigilo de verdade, e anotação que acompanha a pessoa entre
+// aparelhos, só com rota na API.
+
+const PREFIXO_CONTA = 'ma-questoes-conta-v1:';
+export const FATIAS_DA_CONTA = ['favoritos', 'anotacoes'];
+
+const chaveDaConta = (id) => `${PREFIXO_CONTA}${id}`;
+
+export function carregarDadosDaConta(id) {
+  if (id == null) return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(chaveDaConta(id)) || '{}');
+    if (!ehObjetoSimples(parsed)) return {};
+
+    // Só as fatias da conta: uma chave adulterada não pode trocar tema, tela
+    // ou `__usuario` de quem entrar.
+    return Object.fromEntries(
+      FATIAS_DA_CONTA.filter((fatia) => fatia in parsed).map((fatia) => [fatia, parsed[fatia]])
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function salvarDadosDaConta(id, estado) {
+  if (id == null) return;
+  try {
+    const dados = Object.fromEntries(FATIAS_DA_CONTA.map((fatia) => [fatia, estado[fatia]]));
+    localStorage.setItem(chaveDaConta(id), JSON.stringify(dados));
+  } catch {
+    // modo privado ou quota: o que está na tela continua valendo nesta aba
+  }
+}
+
+/**
+ * O estado com que uma conta começa ao entrar.
+ *
+ * Mesma conta do estado salvo: segue como está. Outra conta, ou nenhuma
+ * (depois de um logout): recomeça do padrão, mantendo o tema — que é do
+ * aparelho, não da conta — e recupera os favoritos e as anotações guardados
+ * para ela.
+ *
+ * Pura de propósito: roda dentro de um updater do `setState`, então quem
+ * chama lê `carregarDadosDaConta` antes e passa o resultado.
+ */
+export function estadoDaConta(atual, id, defaults, dadosDaConta = {}) {
+  if (atual.__usuario != null && String(atual.__usuario) === String(id)) return atual;
+
+  return {
+    ...mesclarComPadrao(defaults, dadosDaConta),
+    theme: atual.theme,
+    __usuario: id,
+  };
 }

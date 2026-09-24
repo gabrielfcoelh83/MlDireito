@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { THEMES, buildStyles } from './lib/theme';
 import { Icon } from './lib/icons';
 import { NAV, PAGE_META } from './lib/navegacao';
-import { loadState, saveState, limparEstado } from './lib/storage';
+import {
+  loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
+} from './lib/storage';
 import { diasAteProva, metaDiaria, sequenciaAtual } from './lib/metrics';
 import { montarDisciplinas } from './lib/disciplinas';
 import { planoDaSemana } from './lib/agenda';
@@ -34,7 +36,9 @@ import Configuracoes from './screens/Configuracoes';
 //
 // `__usuario` guarda de quem é o estado salvo neste navegador. Sem ele, sair
 // de uma conta e entrar em outra no mesmo computador herdava favoritos,
-// anotações e histórico de simulado da pessoa anterior.
+// anotações e histórico de simulado da pessoa anterior. Favoritos e anotações
+// também ficam guardados por conta (`salvarDadosDaConta`), e é de lá que voltam
+// quando a mesma pessoa entra de novo.
 const DEFAULT_STATE = {
   __usuario: null,
   theme: 'rosa',
@@ -53,8 +57,21 @@ const DEFAULT_STATE = {
   resultados_historico: [],
 };
 
+// A conta dona do estado sai do token, que está aqui na hora; o perfil só a
+// confirma depois, pela rede. Esperar por ele deixava quem entrava ver, por um
+// instante, os favoritos de quem tinha saído por token vencido — e, com os
+// dados guardados por conta, um clique nesse instante gravaria na conta errada.
+function contaDoToken() {
+  const payload = payloadDoToken(getToken());
+  return payload ? { id: payload.id, dados: carregarDadosDaConta(payload.id) } : null;
+}
+
 export default function App() {
-  const [state, setState] = useState(() => loadState(DEFAULT_STATE));
+  const [state, setState] = useState(() => {
+    const salvo = loadState(DEFAULT_STATE);
+    const conta = contaDoToken();
+    return conta ? estadoDaConta(salvo, conta.id, DEFAULT_STATE, conta.dados) : salvo;
+  });
   const [notifOpen, setNotifOpen] = useState(false);
   const [sessao, setSessao] = useState(() => (getToken() ? 'ativa' : 'ausente'));
   const [erroSync, setErroSync] = useState(null);
@@ -70,6 +87,9 @@ export default function App() {
 
   useEffect(() => {
     saveState(state);
+    // Sem conta (depois do logout) não grava: o estado padrão escreveria
+    // listas vazias por cima do que a pessoa acabou de deixar guardado.
+    salvarDadosDaConta(state.__usuario, state);
   }, [state]);
 
   // ---- Perfil: quem está usando o app ----
@@ -86,10 +106,12 @@ export default function App() {
         if (cancelado) return;
         setPerfil({ estado: 'pronto', id: p.id, name: p.name, email: p.email || payload.email });
 
+        const dadosDaConta = carregarDadosDaConta(p.id);
         setState((st) => {
-          // Estado de outra conta neste navegador: recomeça do zero em vez de
-          // mostrar os favoritos e as anotações de outra pessoa.
-          const base = String(st.__usuario) === String(p.id) ? st : { ...DEFAULT_STATE, theme: st.theme };
+          // A troca de conta normalmente já aconteceu ao entrar, pelo token.
+          // Repetir aqui cobre o perfil que volte com outro id: o estado de
+          // outra conta não pode ficar na tela de quem entrou.
+          const base = estadoDaConta(st, p.id, DEFAULT_STATE, dadosDaConta);
           const prefs = p.preferencias || {};
 
           return {
@@ -381,9 +403,11 @@ export default function App() {
     // E o que já estava no ar não pode voltar para a tela depois daqui.
     sessaoEpoch.current += 1;
     setUsuarioTentativas({});
-    // O que era desta conta sai junto — inclusive o que estava guardado neste
-    // navegador: favoritos e anotações são de quem estava logado, e quem
-    // entrar depois não pode encontrá-los na tela.
+    // O que era desta conta sai da tela — quem entrar depois não pode
+    // encontrá-lo. Favoritos e anotações continuam guardados na chave da conta
+    // (o efeito de gravação os mantém em dia a cada mudança) e voltam quando a
+    // mesma pessoa entrar de novo. Apagá-los aqui, como antes, fazia "Sair"
+    // destruir tudo o que ela tinha escrito.
     limparEstado();
     setState({ ...DEFAULT_STATE, theme: state.theme });
     setPerfil({ estado: 'carregando', id: null, name: null, email: null });
@@ -392,7 +416,12 @@ export default function App() {
   };
 
   if (sessao !== 'ativa') {
-    return <Login theme={theme} s={s} onEntrar={() => setSessao('ativa')} />;
+    const entrar = () => {
+      const conta = contaDoToken();
+      if (conta) setState((st) => estadoDaConta(st, conta.id, DEFAULT_STATE, conta.dados));
+      setSessao('ativa');
+    };
+    return <Login theme={theme} s={s} onEntrar={entrar} />;
   }
 
   const nome = nomeDeExibicao(perfil, perfil.email);
