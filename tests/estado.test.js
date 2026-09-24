@@ -371,6 +371,13 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   exigir(diasAteProva({ dataProva: '2026-08-13' }, hoje) === 1, 'na véspera da prova deveria faltar 1 dia');
   // Instante com hora continua convertido para o dia local de quem usa.
   exigir(dateKey(new Date(2026, 7, 12, 23, 30)) === '2026-08-12', 'Date local das 23h30 mudou de dia');
+  // E o texto ISO com hora — é assim que as tentativas chegam do servidor —
+  // também: 02:00Z do dia 13 ainda é dia 12 em São Paulo. Cortar o texto nos
+  // 10 primeiros caracteres passaria em UTC e jogaria a resposta das 23h no
+  // Brasil para o dia seguinte (meta, sequência, calendário).
+  const instante = '2026-08-13T02:00:00Z';
+  const esperado = new Date(instante).getTimezoneOffset() >= 180 ? '2026-08-12' : '2026-08-13';
+  exigir(dateKey(instante) === esperado, `instante com hora foi para o dia errado: ${dateKey(instante)}, esperado ${esperado}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,17 @@ const TEMPO_MAXIMO_MS = 60_000;
 // que faz esse tipo de erro reprovar.
 const FUSOS = ['UTC', 'America/Sao_Paulo'];
 
+// Nome de fuso errado não dá erro: o Node cai em UTC em silêncio, e a segunda
+// rodada viraria uma cópia da primeira sem ninguém perceber.
+for (const fuso of FUSOS) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: fuso });
+  } catch {
+    console.error(`Fuso inválido em scripts/testes-lib.js: ${fuso}`);
+    process.exit(1);
+  }
+}
+
 // Roda todos antes de reprovar: quem abriu o PR vê de uma vez tudo o que
 // quebrou, em vez de consertar um arquivo por rodada de CI.
 const reprovados = [];
