@@ -117,11 +117,10 @@ export function carregarDadosDaConta(id) {
     const parsed = JSON.parse(localStorage.getItem(chaveDaConta(id)) || '{}');
     if (!ehObjetoSimples(parsed)) return {};
 
-    // Só as fatias da conta: uma chave adulterada não pode trocar tema, tela
-    // ou `__usuario` de quem entrar.
-    return Object.fromEntries(
-      FATIAS_DA_CONTA.filter((fatia) => fatia in parsed).map((fatia) => [fatia, parsed[fatia]])
-    );
+    // Só as fatias da conta, e sem os campos da tela: uma chave adulterada (ou
+    // gravada antes de `CAMPOS_DA_TELA` existir) não pode trocar tema, tela,
+    // `__usuario`, pasta aberta ou nota selecionada de quem entrar.
+    return recorteDaConta(parsed);
   } catch {
     return {};
   }

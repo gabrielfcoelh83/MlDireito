@@ -473,9 +473,9 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   exigir(carregarDadosDaConta(7).anotacoes?.itens.length === 1, 'a entrada do Bruno apagou as anotações da Ana');
   exigir(carregarDadosDaConta(7).resultados_historico?.length === 1, 'a entrada do Bruno apagou o histórico da Ana');
 
-  // Mesma conta não recomeça: o perfil recarregado a cada abertura passaria
-  // por aqui e zeraria a tela. O id do token é número, o do perfil pode vir
-  // como texto — os dois são a mesma pessoa.
+  // Mesma conta, sem dados novos da chave (é o que o efeito de perfil passa):
+  // não recomeça, senão cada abertura zeraria a tela. O id do token é
+  // número, o do perfil pode vir como texto — os dois são a mesma pessoa.
   exigir(estadoDaConta(volta, '7', padroesApp, {}) === volta, 'a mesma conta (id como texto) recomeçou do zero');
 
   // Fatia gravada por uma versão anterior, sem campo novo: merge de um nível,
@@ -517,12 +517,20 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   exigir(naAbertura.anotacoes.itens.length === 1, 'estado sem dono perdeu as anotações na primeira abertura depois da atualização');
   exigir(naAbertura.favoritos[0] === '55', 'estado sem dono perdeu os favoritos na primeira abertura');
   exigir(naAbertura.resultados_historico.length === 1, 'estado sem dono perdeu o histórico de simulado na primeira abertura');
-
-  // No login, sem `dadosNaAbertura` — é o que o `entrar` do App faz: lá o
-  // estado sem dono pode ser de quem saiu antes, e não é adotado.
-  const noLogin = estadoDaConta(semDono, 14, padroesApp, carregarDadosDaConta(14));
-  exigir(noLogin.anotacoes.itens.length === 0 && noLogin.favoritos.length === 0, 'no login, o estado sem dono foi adotado pela conta que entrou');
   exigir(naAbertura.__usuario === 12, 'o estado adotado precisa ficar marcado com o dono do token');
+
+  // Sem `dadosNaAbertura`, o estado sem dono não é adotado. É por isso que o
+  // `entrar` do App não a usa: no login, o estado sem dono pode ser de quem
+  // saiu antes. (Este teste cobre a função; que o `entrar` não a chame, só a
+  // leitura do App garante.)
+  const noLogin = estadoDaConta(semDono, 14, padroesApp, carregarDadosDaConta(14));
+  exigir(noLogin.anotacoes.itens.length === 0 && noLogin.favoritos.length === 0, 'sem dadosNaAbertura, o estado sem dono foi adotado');
+
+  // Chave gravada antes de `CAMPOS_DA_TELA`, com pasta e seleção dentro:
+  // a leitura as descarta, e a aba segue com as dela.
+  guardado['ma-questoes-conta-v1:17'] = JSON.stringify({ anotacoes: { folder: 'Penal', activeId: 'zz', itens: [nota] } });
+  const lidaAntiga = carregarDadosDaConta(17);
+  exigir(!('folder' in lidaAntiga.anotacoes) && !('activeId' in lidaAntiga.anotacoes), 'a leitura da chave deixou passar pasta ou seleção');
 
   // Se a conta já tem chave, ela vence: o estado sem dono pode ser velho.
   exigir(

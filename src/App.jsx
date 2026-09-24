@@ -113,7 +113,12 @@ export default function App() {
           // A troca de conta normalmente já aconteceu ao entrar, pelo token.
           // Repetir aqui cobre o perfil que volte com outro id: o estado de
           // outra conta não pode ficar na tela de quem entrou.
-          const base = estadoDaConta(st, p.id, DEFAULT_STATE, dadosDaConta);
+          //
+          // Com a mesma conta não reaplica a chave: a abertura e o `entrar` já
+          // aplicaram, e fazê-lo aqui, depois de uma ida à rede, só estaria
+          // certo enquanto toda edição for gravada antes desta resposta chegar.
+          const mesmaConta = String(st.__usuario) === String(p.id);
+          const base = estadoDaConta(st, p.id, DEFAULT_STATE, mesmaConta ? {} : dadosDaConta);
           const prefs = p.preferencias || {};
 
           return {
