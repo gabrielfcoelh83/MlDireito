@@ -29,8 +29,10 @@ src/
 └── lib/                  # Lógica sem tela; a maior parte roda no `node` (ver "Rodar e testar")
     ├── api/api.js        # Único cliente HTTP do gateway
     ├── api/paginas.js    # Laço de páginas e tradução array/envelope (puro, testado)
+    ├── api/retentativa.js  # Repete pedido recusado com 429 pelo nginx (puro, testado)
     ├── questions/acervo.js  # Tradução acervo → tela, embaralhar, fontes do quiz
     ├── historico.js      # Mescla a carga do histórico com o que foi respondido durante ela
+    ├── fila.js           # Envio um a um, que para quando a sessão acaba (respostas do simulado)
     ├── storage.js        # localStorage: estado da interface e dados por conta
     ├── metrics.js        # Meta diária, sequência, taxas, evolução, estatísticas
     ├── revisao.js        # O que está errado / não respondido / favoritado
@@ -74,7 +76,7 @@ recarregar a página volta para ela — mas não há URL por tela.
 | `dashboard` | `Dashboard.jsx` | Resumo do dia, próximo passo, evolução | `dash`, `setDash`, `acervo` |
 | `cronograma` | `Cronograma.jsx` | Sugestão de semana e calendário do mês | — |
 | `questoes` | `Questoes.jsx` | Escolha de fonte e quiz | `quest`, `setQuest`, `registrar`, `anotarFeedback`, `acervo`, `recarregarAcervo` |
-| `simulados` | `Simulados.jsx` | Configurar, cronometrar e corrigir simulado | `sim`, `setSim`, `setResultadosHistorico`, `registrar` |
+| `simulados` | `Simulados.jsx` | Configurar, cronometrar e corrigir simulado | `sim`, `setSim`, `setResultadosHistorico`, `registrarRespostas` |
 | `revisoes` | `Revisoes.jsx` | Erradas, favoritas, menor desempenho | `rev`, `setRev`, `favoritos`, `toggleFavorito` |
 | `desempenho` | `Desempenho.jsx` | Evolução ao longo do tempo | `perf`, `setPerf` |
 | `estatisticas` | `Estatisticas.jsx` | Números por período e disciplina | `filtros`, `setFiltros` |
@@ -171,11 +173,11 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
   quiz não espera a rede; o feedback ("foi chute", "eliminei") espera essa
   promessa porque precisa do `id` que o POST devolve.
 - `sessaoEpoch` — contador de sessão. Toda gravação (`registrar`,
-  `anotarFeedback`, `atualizarNome`, `atualizarConfig`) confere, depois do
-  `await`, se a sessão ainda é a mesma, para uma resposta que chega atrasada
-  não aparecer para a próxima pessoa. As três cargas (perfil, tentativas,
-  acervo) fazem o mesmo com o `let cancelado` do efeito, que vira `true`
-  quando `sessao` muda.
+  `registrarRespostas`, `anotarFeedback`, `atualizarNome`, `atualizarConfig`)
+  confere, depois do `await`, se a sessão ainda é a mesma, para uma resposta
+  que chega atrasada não aparecer para a próxima pessoa. As três cargas
+  (perfil, tentativas, acervo) fazem o mesmo com o `let cancelado` do efeito,
+  que vira `true` quando `sessao` muda.
 - `gravacaoDePreferencias` — fila de uma só para os PUT de meta e data da prova
   (`atualizarConfig`): dois PUT soltos podem chegar fora de ordem e o mais
   velho sobrescrever o mais novo. Um PUT que ainda esperava a vez quando a
@@ -199,6 +201,14 @@ Todo acesso ao gateway passa por `lib/api/api.js`, com `fetch`. O `axios` do
 o outro) e enviado como `Authorization: Bearer`. Qualquer 401 apaga o token
 (`req` em `api.js`) e, no `App`, passa por `encerrarSessao`, que volta ao
 Login — venha de uma carga ou de uma gravação.
+
+**429.** Pedido autenticado recusado com 429 é repetido até três vezes, com
+espera (`retentativa.js`). O 429 vem do `limit_req` do nginx, antes de chegar
+a qualquer serviço, então repetir não grava nada em dobro. Login e cadastro
+não repetem: lá o limite existe contra quem tenta senha atrás de senha. As
+respostas de um simulado vão em fila (`registrarRespostas` + `fila.js`), uma
+de cada vez: todas juntas passavam do limite numa prova de 80 questões. A
+fila para se a sessão ou o token mudarem no meio.
 
 **Erros.** Toda falha vira `ApiError(message, status)`. `status` 0 significa
 que a requisição não chegou (rede ou CORS — o navegador não deixa distinguir).
