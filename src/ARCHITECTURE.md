@@ -212,6 +212,12 @@ carrega, com `VITE_GOOGLE_CLIENT_ID` no build — na Vercel e, em dev, no
 roda (o domínio da Vercel e `http://localhost:5173`) tem de estar nas
 "Origens JavaScript autorizadas" do Client ID no Google Cloud.
 
+Conta nova é criada pelo Google na primeira vez. Se o e-mail já tem conta
+com senha, o Google **não** a liga sozinho (409, "entre com e-mail e
+senha"): o cadastro por senha não confirma o e-mail, e ligar entregaria a
+conta a quem cadastrou o e-mail de outra pessoa. Ligar o Google a uma conta
+com senha, com a pessoa já logada, ainda não existe.
+
 **429.** Pedido autenticado recusado com 429 é repetido até três vezes, com
 espera (`retentativa.js`). O 429 vem do `limit_req` do nginx, antes de chegar
 a qualquer serviço, então repetir não grava nada em dobro. Login e cadastro
