@@ -9,7 +9,8 @@
 //
 // Por isso o laço é puro e roda aqui, contra um servidor de mentira.
 
-import { percorrerPaginas } from '../src/lib/api/paginas.js';
+import { paraPagina, percorrerPaginas } from '../src/lib/api/paginas.js';
+import { mesclarTentativas } from '../src/lib/historico.js';
 
 const falhas = [];
 const exigir = (condicao, mensagem) => {
@@ -146,10 +147,73 @@ const opcoes = { maxPaginas: 50, chaveDe: (l) => l.id };
   exigir(itens.length === 3, `página vazia: ${itens.length} itens, esperado 3`);
 }
 
+// ---------------------------------------------------------------------------
+// Os dois formatos de resposta
+// ---------------------------------------------------------------------------
+{
+  // O serviço antigo responde array. Sem esta tradução, o array cairia em
+  // `resposta.tentativas` (undefined) e o histórico viria vazio para todo
+  // mundo até o serviço novo ser publicado — com o laço dizendo "completo".
+  const antigo = paraPagina([{ id: '1' }, { id: '2' }], 'tentativas');
+  exigir(antigo.itens.length === 2, `array do serviço antigo virou ${antigo.itens.length} itens`);
+  exigir(antigo.total === 2, 'array do serviço antigo tem de vir com total igual ao tamanho, para o laço parar');
+
+  const novo = paraPagina({ tentativas: [{ id: '1' }], total: 40, limite: 1, offset: 0 }, 'tentativas');
+  exigir(novo.itens.length === 1 && novo.total === 40, 'envelope: itens da página e total do filtro');
+
+  const vazio = paraPagina(null, 'tentativas');
+  exigir(vazio.itens.length === 0 && vazio.total === 0, 'resposta vazia (204) vira página vazia, não exceção');
+
+  const outraChave = paraPagina({ questoes: [{ id: '1' }], total: 1 }, 'tentativas');
+  exigir(outraChave.itens.length === 0, 'envelope de outra rota não pode ser lido como tentativas');
+}
+
+// ---------------------------------------------------------------------------
+// A resposta dada enquanto o histórico carrega
+// ---------------------------------------------------------------------------
+{
+  const t = (id, extra = {}) => ({ id, correta: true, tipo: null, certeza: null, ...extra });
+
+  // O servidor devolveu o que tinha quando cada página foi lida. Enquanto isso,
+  // a pessoa respondeu a q1 de novo (id 30) e a q9 pela primeira vez (id 31) —
+  // as duas entraram no topo depois da página 1 e não vieram na carga.
+  const carregadas = {
+    q1: { tentativas: [t('10'), t('20')], desempenho: 'necessita' },
+    q2: { tentativas: [t('11')], desempenho: 'necessita' },
+  };
+  const recentes = {
+    q1: { tentativas: [t('30')], desempenho: 'necessita' },
+    q9: { tentativas: [t('31')], desempenho: 'necessita' },
+  };
+  const junto = mesclarTentativas(carregadas, recentes);
+
+  const idsQ1 = junto.q1.tentativas.map((x) => x.id);
+  exigir(
+    JSON.stringify(idsQ1) === JSON.stringify(['10', '20', '30']),
+    `q1 deveria ser [10,20,30] em ordem cronológica, veio ${JSON.stringify(idsQ1)}`
+  );
+  exigir(junto.q9?.tentativas.length === 1, 'questão respondida só durante a carga sumiu da tela');
+  exigir(junto.q2.tentativas.length === 1, 'questão que só veio da carga se perdeu na mesclagem');
+
+  // O feedback aplicado na tela depois que a página foi lida vence a versão
+  // do servidor, que ainda não o tinha.
+  const comFeedback = mesclarTentativas(
+    { q1: { tentativas: [t('10'), t('20')] } },
+    { q1: { tentativas: [t(20, { tipo: 'chute', certeza: 30 })] } }
+  );
+  exigir(comFeedback.q1.tentativas.length === 2, 'a mesma tentativa, com id número e texto, virou duas');
+  exigir(comFeedback.q1.tentativas[1].tipo === 'chute', 'o feedback dado durante a carga foi sobrescrito pela carga');
+
+  // Nada registrado durante a carga: o resultado é a carga, sem mexer nela.
+  const soCarga = mesclarTentativas(carregadas, {});
+  exigir(JSON.stringify(soCarga) === JSON.stringify(carregadas), 'sem respostas novas, a carga tem de passar intacta');
+  exigir(carregadas.q1.tentativas.length === 2, 'a mesclagem não pode alterar o objeto carregado');
+}
+
 if (falhas.length > 0) {
   console.error(`\n❌ ${falhas.length} problema(s):`);
   for (const f of falhas) console.error('   - ' + f);
   process.exit(1);
 }
 
-console.log('✅ paginação: lê até o fim, aceita o serviço antigo, descarta repetidas e não prende o laço');
+console.log('✅ paginação: lê até o fim, aceita o serviço antigo, descarta repetidas, não prende o laço e não perde resposta dada durante a carga');

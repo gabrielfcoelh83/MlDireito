@@ -1,5 +1,5 @@
 import { paraQuestaoDeTela } from '../questions/acervo.js';
-import { percorrerPaginas } from './paginas.js';
+import { paraPagina, percorrerPaginas } from './paginas.js';
 
 // Cliente da API da plataforma (gateway :3000 atrás do nginx).
 //
@@ -212,17 +212,13 @@ export function agruparPorQuestao(linhas) {
 }
 
 // Uma página do histórico. Mesmo desenho de `buscarPaginaDeQuestoes`: o
-// envelope é opt-in (`paginado=1`), e um serviço anterior a ele ignora os
-// parâmetros e responde com array — que aqui vira uma página só, com `total`
-// igual ao que veio, para o laço parar em vez de pedir a mesma lista de novo.
+// envelope é opt-in (`paginado=1`), e `paraPagina` aceita também o array de
+// um serviço anterior a ele.
 async function buscarPaginaDeTentativas({ limite = 1000, offset = 0 } = {}) {
   const params = new URLSearchParams({ limite: String(limite), paginado: '1' });
   if (offset) params.set('offset', String(offset));
 
-  const envelope = await req(`/api/tentativas?${params}`);
-
-  if (Array.isArray(envelope)) return { itens: envelope, total: envelope.length };
-  return { itens: envelope?.tentativas || [], total: envelope?.total ?? 0 };
+  return paraPagina(await req(`/api/tentativas?${params}`), 'tentativas');
 }
 
 // O serviço entrega no máximo 1000 por pedido, e pedir uma vez só cortava o

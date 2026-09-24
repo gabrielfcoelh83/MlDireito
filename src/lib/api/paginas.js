@@ -7,6 +7,21 @@
 // mostra como se estivesse certa.
 
 /**
+ * A resposta de uma rota paginada no formato que `percorrerPaginas` espera.
+ *
+ * O envelope (`{ [chave], total }`) é opt-in, e um serviço anterior a ele
+ * ignora os parâmetros e responde com array. O array vira uma página só, com
+ * `total` igual ao que veio, para o laço parar em vez de pedir a mesma lista
+ * de novo. Esta é a única linha que segura a combinação "front novo, serviço
+ * antigo": sem ela, o array cairia em `resposta[chave]`, que é `undefined`, e
+ * o histórico apareceria vazio para todo mundo até o serviço ser publicado.
+ */
+export function paraPagina(resposta, chave) {
+  if (Array.isArray(resposta)) return { itens: resposta, total: resposta.length };
+  return { itens: resposta?.[chave] || [], total: resposta?.total ?? 0 };
+}
+
+/**
  * Pede páginas a `buscarPagina(offset)` até somar o `total` que o servidor
  * informa, ou até uma página vir vazia.
  *
