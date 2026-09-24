@@ -151,9 +151,10 @@ export function contaDaChave(chave) {
 // abas da mesma conta abertas, a desatualizada sobrescrevia a nota que a outra
 // acabou de criar só porque alguém clicou no menu dela. Pular a gravação
 // quando os dados da conta não mudaram desde a última vez DESTA aba resolve
-// isso — junto com `CAMPOS_DA_TELA` e com a chave valendo na abertura (ver
-// `estadoDaConta`). Editar dados da conta na aba desatualizada ainda
-// sobrescreve, como já acontecia com o estado da interface.
+// isso — junto com `CAMPOS_DA_TELA`, com a chave valendo na abertura (ver
+// `estadoDaConta`) e com as abas se atualizando pelo evento `storage` (ver
+// `registrarRecebido`). Duas abas editando quase no mesmo instante, antes de
+// uma receber o evento da outra, ainda terminam com a gravação da última.
 const ultimaGravacao = new Map();
 
 export function salvarDadosDaConta(id, estado) {
@@ -168,6 +169,20 @@ export function salvarDadosDaConta(id, estado) {
   } catch {
     // modo privado ou quota: o que está na tela continua valendo nesta aba
   }
+}
+
+/**
+ * Marca como já gravado o que chegou de outra aba pelo evento `storage`.
+ *
+ * Sem isto, a aba que recebe aplicava os dados, e o efeito de gravação —
+ * que compara com a última gravação DESTA aba, não com o que está na chave —
+ * regravava a mesma versão. Com a pessoa digitando na outra aba, esse eco
+ * chegava atrasado e sobrescrevia o que ela já tinha digitado depois: o
+ * texto voltava atrás. Chamar antes de aplicar os dados faz o efeito pular.
+ */
+export function registrarRecebido(id, texto) {
+  if (id == null) return;
+  ultimaGravacao.set(chaveDaConta(id), JSON.stringify(lerDadosDaConta(texto)));
 }
 
 /**

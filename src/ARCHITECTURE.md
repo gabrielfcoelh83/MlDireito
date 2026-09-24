@@ -168,8 +168,11 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
   dados da conta gravados por uma aba entram nas outras da mesma conta na
   hora, sem recarregar. Se o token muda noutra aba (saiu e entrou outra
   conta), esta recarrega já na conta nova; se o token some, volta ao login.
-  Sem isso, uma aba desatualizada apagava a nota nova da outra ao editar, e
-  uma aba seguia mostrando uma conta e gravando com o token de outra.
+  Uma aba parada no Login também recarrega quando outra entra — e passa a
+  mostrar a conta que entrou. Sem isso, uma aba desatualizada apagava a nota
+  nova da outra ao editar, e uma aba seguia mostrando uma conta e gravando
+  com o token de outra. Duas abas editando no mesmo instante, antes de uma
+  receber o evento da outra, ainda terminam com a gravação da última.
 - **Estado sem dono na abertura** (gravado antes da chave existir, por conta
   sem perfil no servidor) é adotado pela conta do token (`dadosNaAbertura`).
   No login não: lá, um estado sem dono pode ser de quem saiu antes.

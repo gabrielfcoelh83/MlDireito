@@ -433,7 +433,7 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
 
   const {
     loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
-    dadosNaAbertura, lerDadosDaConta, contaDaChave,
+    dadosNaAbertura, lerDadosDaConta, contaDaChave, registrarRecebido,
   } = await import('../src/lib/storage.js');
 
   const padroes = { theme: 'rosa', configuracoes: { meta: 20, dataProva: null }, favoritos: [] };
@@ -656,6 +656,18 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   const sincronizada = estadoDaConta(estaAba, 42, padroesApp, deOutraAba);
   exigir(sincronizada.anotacoes.itens.length === 1 && sincronizada.favoritos[0] === '9', 'dados da outra aba não entraram nesta');
   exigir(sincronizada.screen === 'questoes' && sincronizada.anotacoes.folder === 'Penal', 'sincronizar com outra aba mexeu na tela desta');
+
+  // O eco: a outra aba grava X1, X2, X3 enquanto a pessoa digita; esta recebe
+  // X1 e, se regravasse, poria X1 por cima de X3 na chave. Depois de
+  // `registrarRecebido`, gravar o estado resultante não pode tocar a chave.
+  const x1 = JSON.stringify({ favoritos: [], anotacoes: { itens: [{ ...nota, conteudo: 'X1' }] }, resultados_historico: [] });
+  const x3 = JSON.stringify({ favoritos: [], anotacoes: { itens: [{ ...nota, conteudo: 'X1X2X3' }] }, resultados_historico: [] });
+  const recebeu = { ...padroesApp, __usuario: 43, anotacoes: { folder: 'Todas', activeId: null, itens: [] } };
+  salvarDadosDaConta(43, recebeu);             // o que esta aba tinha gravado antes
+  guardado['ma-questoes-conta-v1:43'] = x3;     // a outra aba já está em X3
+  registrarRecebido(43, x1);                    // e o evento de X1 chega agora
+  salvarDadosDaConta(43, estadoDaConta(recebeu, 43, padroesApp, lerDadosDaConta(x1)));
+  exigir(guardado['ma-questoes-conta-v1:43'] === x3, 'a aba que recebeu devolveu à chave uma versão velha (o texto voltaria atrás)');
 }
 
 if (falhas.length > 0) {

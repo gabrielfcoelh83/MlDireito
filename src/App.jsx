@@ -4,7 +4,7 @@ import { Icon } from './lib/icons';
 import { NAV, PAGE_META } from './lib/navegacao';
 import {
   loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
-  dadosNaAbertura, lerDadosDaConta, contaDaChave,
+  dadosNaAbertura, lerDadosDaConta, contaDaChave, registrarRecebido,
 } from './lib/storage';
 import { diasAteProva, metaDiaria, sequenciaAtual } from './lib/metrics';
 import { montarDisciplinas } from './lib/disciplinas';
@@ -194,6 +194,9 @@ export default function App() {
       if (id == null || String(id) !== String(dono.current)) return;
       const dados = lerDadosDaConta(evento.newValue);
       if (Object.keys(dados).length === 0) return;
+      // Antes de aplicar: senão esta aba devolveria à chave, atrasada, a
+      // versão que acabou de receber (ver `registrarRecebido`).
+      registrarRecebido(id, evento.newValue);
       setState((st) => estadoDaConta(st, st.__usuario, DEFAULT_STATE, dados));
     };
 
