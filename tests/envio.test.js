@@ -74,6 +74,44 @@ const pausa = () => new Promise((r) => setTimeout(r, 1));
 }
 
 // ---------------------------------------------------------------------------
+// Fila: poucos de cada vez
+// ---------------------------------------------------------------------------
+{
+  // É como o App chama: quatro no ar, nunca mais. Em série a prova levava
+  // tempo demais; todas juntas, o nginx recusava.
+  let emVoo = 0;
+  let maximo = 0;
+  const enviados = new Map();
+  const r = await enviarEmFila(Array.from({ length: 80 }, (_, i) => i), async (item) => {
+    emVoo += 1;
+    maximo = Math.max(maximo, emVoo);
+    await pausa();
+    enviados.set(item, (enviados.get(item) || 0) + 1);
+    emVoo -= 1;
+    return true;
+  }, { simultaneos: 4 });
+
+  exigir(maximo === 4, `com simultaneos: 4, ficaram ${maximo} pedidos no ar ao mesmo tempo`);
+  exigir(r.salvos === 80 && enviados.size === 80, `80 itens com 4 por vez: ${r.salvos} salvos, ${enviados.size} distintos`);
+  exigir([...enviados.values()].every((v) => v === 1), 'algum item foi enviado duas vezes');
+}
+
+{
+  // Fim de sessão com quatro no ar: os que já saíram terminam, nenhum novo sai.
+  let sessaoAtiva = true;
+  let enviados = 0;
+  const r = await enviarEmFila(Array.from({ length: 20 }, (_, i) => i), async () => {
+    enviados += 1;
+    if (enviados === 6) sessaoAtiva = false;
+    await pausa();
+    return true;
+  }, { simultaneos: 4, continuar: () => sessaoAtiva });
+
+  exigir(enviados <= 6 + 3, `depois do fim da sessão ainda saíram pedidos: ${enviados} enviados`);
+  exigir(r.interrompida && r.salvos === enviados, `interrompida com 4 por vez: ${JSON.stringify(r)}`);
+}
+
+// ---------------------------------------------------------------------------
 // 429: repetir, com espera, e desistir no fim
 // ---------------------------------------------------------------------------
 const resposta = (status) => ({ status });
@@ -122,4 +160,4 @@ if (falhas.length > 0) {
   process.exit(1);
 }
 
-console.log('✅ envio: fila um a um, falhas contadas, para no fim da sessão; 429 repetido com espera e só ele');
+console.log('✅ envio: fila com limite de pedidos no ar, falhas contadas, para no fim da sessão; 429 repetido com espera e só ele');
