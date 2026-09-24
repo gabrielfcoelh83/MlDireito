@@ -12,6 +12,7 @@ import { planoDaSemana } from './lib/agenda';
 import { embaralhar } from './lib/questions/acervo';
 import { classificarRevisao } from './lib/revisao';
 import { mesclarTentativas } from './lib/historico';
+import { enviarEmFila } from './lib/fila';
 import { payloadDoToken, saudacao, iniciais, nomeDeExibicao } from './lib/perfil';
 import {
   getToken, logout, listarTentativas, listarQuestoes, registrarTentativa,
@@ -323,8 +324,11 @@ export default function App() {
 
   // Grava no servidor primeiro e só depois no estado: o que aparece na tela
   // como respondido é o que a API confirmou ter gravado.
-  const registrar = ({ questaoId, correta, alternativa, tempoSeg }) => {
-    setErroSync(null);
+  // `emLote`: a fila do simulado (`registrarRespostas`) cuida da faixa de erro
+  // uma vez só, no fim — resposta por resposta, cada chamada apagaria a
+  // mensagem da falha anterior.
+  const registrar = ({ questaoId, correta, alternativa, tempoSeg }, { emLote = false } = {}) => {
+    if (!emLote) setErroSync(null);
     const epoch = sessaoEpoch.current;
 
     const pendente = (async () => {
@@ -352,13 +356,36 @@ export default function App() {
         if (err.status === 401) { encerrarSessao(); return null; }
         // O quiz continua andando; o que se perdeu foi o registro. Dizer isso
         // é melhor que deixar a pessoa achar que estudou e nada ficou gravado.
-        setErroSync(`Esta resposta não foi salva: ${err.message}`);
+        if (!emLote) setErroSync(`Esta resposta não foi salva: ${err.message}`);
         return null;
       }
     })();
 
     registroPendente.current.set(questaoId, pendente);
     return pendente;
+  };
+
+  // As respostas de um simulado inteiro, uma de cada vez (ver `lib/fila.js`:
+  // todas juntas passavam do limite do nginx e parte voltava 429).
+  //
+  // A fila confere, antes de cada envio, que a sessão e o token ainda são os
+  // do fim da prova. Ela leva alguns segundos; se nesse meio-tempo a pessoa
+  // sair e outra entrar, o resto não sai com o token de quem entrou — seriam
+  // respostas de uma conta gravadas na outra.
+  const registrarRespostas = async (respostas) => {
+    const epoch = sessaoEpoch.current;
+    const token = getToken();
+    setErroSync(null);
+
+    const { falhas } = await enviarEmFila(
+      respostas,
+      async (resposta) => (await registrar(resposta, { emLote: true })) !== null,
+      { continuar: () => sessaoEpoch.current === epoch && getToken() === token },
+    );
+
+    if (falhas > 0 && sessaoEpoch.current === epoch) {
+      setErroSync(`${falhas} de ${respostas.length} respostas deste simulado não foram salvas no servidor.`);
+    }
   };
 
   // "Como você chegou nessa resposta?" — chute, intuição, eliminação. É o que
@@ -768,7 +795,7 @@ export default function App() {
               sim={state.simulados}
               setSim={(p) => updateSlice('simulados', p)}
               setResultadosHistorico={(p) => updateSlice('resultados_historico', p)}
-              registrar={registrar}
+              registrarRespostas={registrarRespostas}
             />
           )}
           {state.screen === 'revisoes' && (
