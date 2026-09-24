@@ -28,8 +28,10 @@ src/
 │   └── GeradorQuestoes.jsx  # Gerador por IA — NÃO está em uso (ver Pendências)
 └── lib/                  # Lógica sem tela; a maior parte roda no `node` (ver "Rodar e testar")
     ├── api/api.js        # Único cliente HTTP do gateway
+    ├── api/paginas.js    # Laço de páginas e tradução array/envelope (puro, testado)
     ├── questions/acervo.js  # Tradução acervo → tela, embaralhar, fontes do quiz
-    ├── storage.js        # localStorage com merge de um nível
+    ├── historico.js      # Mescla a carga do histórico com o que foi respondido durante ela
+    ├── storage.js        # localStorage: estado da interface e dados por conta
     ├── metrics.js        # Meta diária, sequência, taxas, evolução, estatísticas
     ├── revisao.js        # O que está errado / não respondido / favoritado
     ├── disciplinas.js    # Disciplinas derivadas do acervo, cores, prioridade
@@ -47,6 +49,7 @@ api/                      # Funções serverless (Vercel)
 └── _lib/                 # auth.js (exige login), datajud.js
 
 server/dev-api.js         # Serve as rotas de api/ em dev (o Vite não serve)
+scripts/testes-lib.js     # Roda os testes de lib/ (npm run test:lib)
 tests/                    # Testes unitários da lib/, de API e e2e (Playwright)
 ```
 
@@ -95,6 +98,7 @@ tipos é o que fazia uma gravação que falhou divergir em silêncio do servidor
 | Tipo | Onde fica | Persistência | Conteúdo |
 |---|---|---|---|
 | Interface | `state` (`DEFAULT_STATE`) | localStorage (`ma-questoes-state-v1`) | tema, tela atual, filtros de cada tela, quiz em andamento, favoritos, anotações, histórico de simulado |
+| Conta | cópia de três fatias de `state` | localStorage (`ma-questoes-conta-v1:<id>`), uma chave por conta | favoritos, anotações (só as notas) e histórico de simulado — ver "Dados da conta" |
 | Servidor | `useState` próprios | nenhuma — recarregados a cada sessão | `acervo`, `usuarioTentativas`, `perfil` |
 | Sessão | `useState` próprio | deriva do token salvo (`ma-questoes-token-v1`) | `sessao` (`'ativa'` / `'ausente'`) |
 | Aviso | `useState` próprio | nenhuma | `erroSync`, a faixa de erro do topo |
@@ -129,28 +133,52 @@ Regras que o código já garante:
 - **Merge de um nível** (`loadState`): campo novo dentro de uma fatia chega a
   quem já tinha estado salvo. Com `{...defaults, ...salvo}` a fatia salva
   inteira venceria e o campo novo nunca apareceria para usuário antigo.
-- **Troca de conta**: quando o perfil carrega e `__usuario` não bate com ele,
-  o estado recomeça do padrão (mantendo só o tema). Depende do perfil carregar
-  — ver Pendências.
-- **Logout** (`sair`): apaga o token, zera o estado da interface **e o
-  localStorage** — favoritos e anotações incluídos.
+- **Troca de conta**: acontece na abertura e no login, pelo id do token
+  (`contaDoToken` + `estadoDaConta`), sem esperar o perfil voltar da rede.
+  Outra conta recomeça do padrão (mantendo só o tema) e recupera os dados da
+  conta dela; a mesma conta segue com a tela como estava.
+- **Logout** (`sair`): apaga o token, encerra a sessão (ver abaixo) e zera o
+  estado da interface — mas não os dados da conta, que voltam quando a mesma
+  pessoa entrar de novo.
 - **Fatias por tela**: cada tela recebe a sua fatia e um setter montado com
   `updateSlice(chave, parcial)`, que aceita objeto (merge) ou função.
+
+### Dados da conta
+
+Favoritos, anotações e histórico de simulado não têm rota na API. Além de
+viverem em `state`, ficam numa chave por conta, gravada pelo mesmo efeito que
+grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
+
+- **Sair não apaga**, e quem entra com outra conta no mesmo navegador não os
+  vê na tela. Não é sigilo: a chave de outra conta segue legível nas
+  ferramentas do navegador. A tela de Anotações avisa isso.
+- **Na abertura com a mesma conta, a chave vale** para essas três fatias. Com
+  duas abas abertas, a desatualizada regrava o estado da interface a cada
+  troca de tela; a chave só é gravada quando os dados da conta mudam
+  (`ultimaGravacao`), então é ela que tem a versão mais nova.
+- **Pasta aberta e nota selecionada não vão para a chave** (`CAMPOS_DA_TELA`):
+  são da tela, mudam só de clicar, e fariam uma aba sobrescrever a outra.
+- **Estado sem dono na abertura** (gravado antes da chave existir, por conta
+  sem perfil no servidor) é adotado pela conta do token (`dadosNaAbertura`).
+  No login não: lá, um estado sem dono pode ser de quem saiu antes.
 
 ### Refs de gravação assíncrona
 
 - `registroPendente` — `Map` de questão → promessa do POST da tentativa. O
   quiz não espera a rede; o feedback ("foi chute", "eliminei") espera essa
   promessa porque precisa do `id` que o POST devolve.
-- `sessaoEpoch` — contador incrementado no logout. `registrar` (no caminho de
-  sucesso) e `anotarFeedback` conferem se a sessão ainda é a mesma depois do
-  `await`, para uma resposta que chega atrasada não reaparecer para a próxima
-  pessoa. As demais escritas depois de `await` ainda não conferem — ver
-  Pendências.
+- `sessaoEpoch` — contador de sessão. Toda escrita de estado depois de um
+  `await` confere se a sessão ainda é a mesma, para uma resposta que chega
+  atrasada não aparecer para a próxima pessoa.
 - `gravacaoDePreferencias` — fila de uma só para os PUT de meta e data da prova
   (`atualizarConfig`): dois PUT soltos podem chegar fora de ordem e o mais
-  velho sobrescrever o mais novo. O PUT do nome (`atualizarNome`) corre fora
-  dela.
+  velho sobrescrever o mais novo. Um PUT que ainda esperava a vez quando a
+  sessão acabou não sai. O PUT do nome (`atualizarNome`) corre fora da fila.
+
+`encerrarSessao` é o fim de uma sessão, por "Sair" ou por 401: sobe o
+`sessaoEpoch`, limpa `registroPendente` e o histórico em memória e volta ao
+Login. No 401 a tela fica — quem entra de novo com a mesma conta volta ao que
+estava fazendo; `sair` é que também zera a tela.
 
 ---
 
@@ -162,9 +190,8 @@ Todo acesso ao gateway passa por `lib/api/api.js`, com `fetch`. O `axios` do
 **Autenticação.** O login devolve um JWT, guardado em
 `ma-questoes-token-v1` (chave separada do estado, para limpar um não derrubar
 o outro) e enviado como `Authorization: Bearer`. Qualquer 401 apaga o token
-(`req` em `api.js`); o `App` volta para o Login quando o 401 chega a um
-`catch` que o trata — as cargas iniciais, `registrar` e `anotarFeedback`.
-`atualizarConfig` e `atualizarNome` ainda não tratam (ver Pendências).
+(`req` em `api.js`) e, no `App`, passa por `encerrarSessao`, que volta ao
+Login — venha de uma carga ou de uma gravação.
 
 **Erros.** Toda falha vira `ApiError(message, status)`. `status` 0 significa
 que a requisição não chegou (rede ou CORS — o navegador não deixa distinguir).
@@ -175,7 +202,7 @@ erro do acervo aparece na própria tela de Questões, com botão de recarregar.
 |---|---|---|
 | `login`, `criarConta` | `POST /api/auth/login`, `/register` | o register já devolve token |
 | `buscarPerfil`, `salvarPerfil` | `GET`/`PUT /api/users/:id` | nome e `profile_data` |
-| `listarTentativas` | `GET /api/tentativas?limite=1000` | agrupa por questão, ordem cronológica |
+| `listarTentativas` → `buscarPaginaDeTentativas` | `GET /api/tentativas?limite=1000&paginado=1[&offset=N]` | percorre as páginas até somar `total` (`percorrerPaginas`, teto de 50 páginas), descarta repetidas pelo id, aceita o formato antigo (array) e agrupa por questão, em ordem cronológica. No `App`, a carga é mesclada com o que foi respondido enquanto ela corria (`mesclarTentativas`) |
 | `registrarTentativa` | `POST /api/tentativas` | |
 | `anotarFeedbackTentativa` | `PATCH /api/tentativas/:id` | tipo e certeza da resposta |
 | `listarQuestoes` → `buscarPaginaDeQuestoes` | `GET /api/questoes?limite=200&paginado=1[&offset=N]` | percorre as páginas até somar `total`, com teto de 60 páginas (passando dele, a lista vem cortada e o aviso vai só para o console); com `aleatorio`, uma página só; aceita também o formato antigo (array) |
@@ -230,10 +257,10 @@ npm run dev
 | `npm run build` | build de produção | sim |
 | `npm run test:e2e` | Playwright contra `npm run dev` + backend do script acima | sim |
 | `npm run test:api` | rotas de `api/`: recusam pedido sem token e com token inválido; com login no gateway, chamam de verdade a OpenRouter e o DataJud | sim |
-| `npm run test:estado` | lib/: perfil, disciplinas, revisão, agenda, métricas, storage | **não** |
-| `npm run test:questoes` | lib/: tradução acervo → tela | **não** |
+| `npm run test:lib` | todo `tests/*.test.js` menos `api.test.js`, cada um em UTC e em America/Sao_Paulo | sim (job de lint do ci.yml e pr.yml) |
+| `npm run test:estado`, `test:questoes`, `test:paginas` | um arquivo de `test:lib` só, para rodar à mão | via `test:lib` |
 | `npm run test:all` | test:e2e + test:api | nenhum workflow chama |
-| `npm run ci` | lint + test:questoes + test:estado + build | nenhum workflow chama |
+| `npm run ci` | lint + test:lib + build — a verificação local, o mesmo que a CI roda sem backend | nenhum workflow chama |
 
 `test:api` precisa de tudo no ar — backend na 3000, dev-api na 3100 com
 `VITE_API_URL` local — e de `OPENROUTER_API_KEY`. Rodado sem isso, falha com
@@ -241,8 +268,14 @@ npm run dev
 
 Os testes da `lib/` rodam no `node` puro, sem navegador. Valem para os módulos
 `.js` que não tocam `import.meta.env` — `lib/api/api.js` é a exceção, e é por
-isso que a lógica testável dele mora em arquivos à parte (`acervo.js`).
-`storage.js` usa `localStorage`, que o teste substitui por um objeto.
+isso que a lógica testável dele mora em arquivos à parte (`acervo.js`,
+`paginas.js`). `storage.js` usa `localStorage`, que o teste substitui por um
+objeto.
+
+`test:lib` descobre os arquivos sozinho: teste novo em `tests/` entra na CI
+sem editar script nem workflow. Os dois fusos existem porque o runner da CI
+está em UTC, onde um erro de data não aparece — a contagem até a prova já
+mostrou um dia a menos no Brasil com a CI verde.
 
 ---
 
@@ -250,33 +283,24 @@ isso que a lógica testável dele mora em arquivos à parte (`acervo.js`).
 
 ### Lacunas conhecidas
 
-1. **Favoritos, anotações e simulados só existem no navegador** — não há rota
-   na API. Como o logout limpa o localStorage, sair da conta apaga esses dados
-   de vez.
-2. **Tentativas sem paginação** — `listarTentativas` pede no máximo 1000 e,
-   passando disso, a lista vem cortada sem aviso. O acervo já tem paginação
-   (`listarQuestoes`); falta o mesmo aqui.
-3. **Trocar o e-mail** não é possível pela tela de Configurações.
-4. **Testes da `lib/` fora da CI** — `test:estado` e `test:questoes` só rodam
-   se alguém chamar à mão.
-5. **Troca de conta depende do perfil.** Um 401 leva ao Login sem limpar o
-   estado (só `sair` limpa). Quem entra depois no mesmo navegador vê, até o
-   perfil carregar, os favoritos e as anotações da pessoa anterior — e, se o
-   perfil falhar com outro erro, continua vendo.
-6. **Escritas depois de `await` sem conferir a sessão** — `atualizarNome` e os
-   `catch` de `atualizarConfig`, `registrar` e do PATCH de feedback. Salvar o
-   nome e sair com o PUT no ar faz o nome antigo voltar ao perfil zerado, e um
-   erro atrasado aparece na faixa do topo para quem entrar depois.
-7. **401 em `atualizarConfig` e `atualizarNome`** mostra "Sessão expirada" na
-   faixa de erro e deixa a pessoa na tela, em vez de voltar ao Login.
-8. **Meta do dia conta simulado em dobro** — cada resposta de simulado vira
-   tentativa no servidor, e `metaDiaria` ainda soma a `quantidade` do
-   simulado concluído hoje.
-9. **`api/_lib/auth.js` cai no gateway de produção** quando falta
+1. **Favoritos, anotações e histórico de simulado só existem no navegador** —
+   não há rota na API. Sair não os apaga mais (ver "Dados da conta"), mas
+   eles não acompanham a pessoa para outro navegador ou aparelho, e limpar os
+   dados do site os apaga de vez.
+2. **Trocar o e-mail** não é possível pela tela de Configurações.
+3. **`api/_lib/auth.js` cai no gateway de produção** quando falta
    `VITE_API_URL`. Em produção é o valor certo; em dev, manda o token de
    teste para a produção. Falhar sem a variável seria mais seguro.
-10. **O build não checa `VITE_API_URL`** — só a primeira chamada à API, já com
-    o deploy publicado.
+4. **O build não checa `VITE_API_URL`** — só a primeira chamada à API, já com
+   o deploy publicado.
+5. **localStorage quase cheio** — se a gravação da chave da conta falhar e a
+   do estado da interface não, recarregar a página traz de volta a versão
+   anterior dos dados da conta, sem aviso.
+6. **Estado antigo sem dono e sem token na abertura** — quem ficou com estado
+   sem dono (versão anterior, conta sem perfil) e perdeu o token por 401
+   antes de atualizar perde esses dados ao entrar de novo. É estreito, e não
+   se repete: a versão atual sempre marca o dono.
+7. **A CI usa Node 20**, que saiu do suporte em 30/04/2026.
 
 ### Limpeza
 
@@ -296,7 +320,7 @@ isso que a lógica testável dele mora em arquivos à parte (`acervo.js`).
 
 ### Refatoração planejada
 
-1. Tirar estado e carga de dados do `App.jsx` (hoje ~735 linhas) para
+1. Tirar estado e carga de dados do `App.jsx` (hoje ~800 linhas) para
    contextos — sessão/perfil, acervo e tentativas, interface.
 2. Extrair o layout (barra lateral, topo, avisos) para componentes próprios.
 3. Biblioteca de componentes de interface (botão, card, modal, abas, etc.) no
