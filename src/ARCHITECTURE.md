@@ -318,6 +318,10 @@ mostrou um dia a menos no Brasil com a CI verde.
    mostrando a conta X, mas as gravações dela saem com o token de Y: uma
    resposta dada na tela de X é gravada na conta Y. Já acontecia antes da
    chave por conta; a mesma falta de ouvinte de `storage` está na origem.
+10. **Edição que recebe 401 some sem aviso** — a tela muda antes do PUT (meta,
+    data da prova) e, com o 401, volta ao login sem dizer que a última
+    alteração não foi salva. Ao entrar de novo, a tela pode mostrar um valor
+    que o servidor não tem. O Login não tem onde mostrar esse aviso hoje.
 
 ### Limpeza
 
