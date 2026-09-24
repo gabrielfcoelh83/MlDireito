@@ -419,8 +419,10 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
     screen: 'dashboard',
     favoritos: [],
     anotacoes: { folder: 'Todas', activeId: null, itens: [] },
+    resultados_historico: [],
   };
   const nota = { id: 'nota-1', titulo: 'Controle de constitucionalidade', conteudo: 'difuso x concentrado' };
+  const simulado = { id: 'sim-1', quantidade: 10, acertos: 7, nota_final: 70, data_conclusao: '2026-09-20T15:00:00Z' };
 
   // A Ana usa o app; o efeito de gravação do App mantém a chave dela em dia.
   const daAna = {
@@ -430,6 +432,7 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
     screen: 'anotacoes',
     favoritos: ['101'],
     anotacoes: { folder: 'Todas', activeId: 'nota-1', itens: [nota] },
+    resultados_historico: [simulado],
   };
   saveState(daAna);
   salvarDadosDaConta(7, daAna);
@@ -444,6 +447,12 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   exigir(volta.favoritos.length === 1 && volta.favoritos[0] === '101', 'o favorito sumiu no logout');
   exigir(volta.anotacoes.itens[0]?.conteudo === nota.conteudo, 'a anotação sumiu no logout');
   exigir(volta.anotacoes.activeId === 'nota-1', 'a nota aberta deveria voltar aberta');
+  // O histórico de simulado entra na meta do dia e na sequência: sumir com ele
+  // mudava números da tela para quem só saiu e entrou de novo.
+  exigir(
+    volta.resultados_historico.length === 1 && volta.resultados_historico[0].nota_final === 70,
+    'o histórico de simulado sumiu no logout'
+  );
   exigir(volta.__usuario === 7, 'o estado recuperado precisa dizer de quem é');
   exigir(volta.theme === 'azul', 'o tema é do aparelho e não muda com a conta');
   exigir(volta.screen === 'dashboard', 'a tela recomeça do padrão, só os dados da conta voltam');
@@ -452,11 +461,13 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   const doBruno = estadoDaConta(volta, 8, padroesApp, carregarDadosDaConta(8));
   exigir(doBruno.favoritos.length === 0, 'o Bruno viu os favoritos da Ana');
   exigir(doBruno.anotacoes.itens.length === 0, 'o Bruno viu as anotações da Ana');
+  exigir(doBruno.resultados_historico.length === 0, 'o Bruno herdou o histórico de simulado da Ana');
   exigir(doBruno.__usuario === 8, 'o estado do Bruno tem de ser marcado como dele');
 
   // ...e a passagem dele não apaga o que é dela.
   salvarDadosDaConta(8, doBruno);
   exigir(carregarDadosDaConta(7).anotacoes?.itens.length === 1, 'a entrada do Bruno apagou as anotações da Ana');
+  exigir(carregarDadosDaConta(7).resultados_historico?.length === 1, 'a entrada do Bruno apagou o histórico da Ana');
 
   // Mesma conta não recomeça: o perfil recarregado a cada abertura passaria
   // por aqui e zeraria a tela. O id do token é número, o do perfil pode vir

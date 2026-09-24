@@ -58,8 +58,8 @@ export function saveState(state) {
  * (ver abaixo).
  *
  * Sem isto, sair de uma conta e entrar em outra no mesmo computador mantinha
- * o histórico de simulado e as telas da pessoa anterior — o app mostrava
- * dados de alguém sem nunca ter mentido explicitamente sobre isso.
+ * as telas da pessoa anterior — filtros, quiz em andamento — e o app mostrava
+ * o estado de alguém sem nunca ter mentido explicitamente sobre isso.
  */
 export function limparEstado() {
   try {
@@ -73,19 +73,24 @@ export function limparEstado() {
 // Dados da conta
 // ---------------------------------------------------------------------------
 //
-// Favoritos e anotações não têm rota na API: moram neste navegador. Enquanto
-// moravam só no estado da interface, o logout tinha de escolher entre
-// apagá-los — e a pessoa perdia o que tinha escrito ao clicar em "Sair" — e
-// mantê-los, mostrando-os a quem entrasse depois no mesmo computador. Com uma
-// chave por conta, nenhuma das duas coisas acontece.
+// Favoritos, anotações e o histórico de simulado não têm rota na API: moram
+// neste navegador. Enquanto moravam só no estado da interface, o logout tinha
+// de escolher entre apagá-los — e a pessoa perdia o que tinha escrito e as
+// notas das provas que fez ao clicar em "Sair" — e mantê-los, mostrando-os a
+// quem entrasse depois no mesmo computador. Com uma chave por conta, nenhuma
+// das duas coisas acontece.
+//
+// O histórico de simulado não é só a lista da tela de Simulados: `metaDiaria`
+// e `sequenciaAtual` também o leem. Apagá-lo no logout mudava a meta do dia e
+// podia encurtar a sequência de quem só tinha saído e entrado de novo.
 //
 // Não é sigilo: a chave de outra conta continua legível nas ferramentas do
 // navegador. O que ela garante é que a tela de uma conta não mostra o que é de
-// outra. Sigilo de verdade, e anotação que acompanha a pessoa entre
-// aparelhos, só com rota na API.
+// outra. Sigilo de verdade, e dado que acompanha a pessoa entre aparelhos, só
+// com rota na API.
 
 const PREFIXO_CONTA = 'ma-questoes-conta-v1:';
-export const FATIAS_DA_CONTA = ['favoritos', 'anotacoes'];
+export const FATIAS_DA_CONTA = ['favoritos', 'anotacoes', 'resultados_historico'];
 
 const chaveDaConta = (id) => `${PREFIXO_CONTA}${id}`;
 

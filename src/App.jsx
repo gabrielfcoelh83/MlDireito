@@ -36,8 +36,8 @@ import Configuracoes from './screens/Configuracoes';
 //
 // `__usuario` guarda de quem é o estado salvo neste navegador. Sem ele, sair
 // de uma conta e entrar em outra no mesmo computador herdava favoritos,
-// anotações e histórico de simulado da pessoa anterior. Favoritos e anotações
-// também ficam guardados por conta (`salvarDadosDaConta`), e é de lá que voltam
+// anotações e histórico de simulado da pessoa anterior. Esses três também
+// ficam guardados por conta (`salvarDadosDaConta`), e é de lá que voltam
 // quando a mesma pessoa entra de novo.
 const DEFAULT_STATE = {
   __usuario: null,
@@ -404,10 +404,10 @@ export default function App() {
     sessaoEpoch.current += 1;
     setUsuarioTentativas({});
     // O que era desta conta sai da tela — quem entrar depois não pode
-    // encontrá-lo. Favoritos e anotações continuam guardados na chave da conta
-    // (o efeito de gravação os mantém em dia a cada mudança) e voltam quando a
-    // mesma pessoa entrar de novo. Apagá-los aqui, como antes, fazia "Sair"
-    // destruir tudo o que ela tinha escrito.
+    // encontrá-lo. Favoritos, anotações e histórico de simulado continuam
+    // guardados na chave da conta (o efeito de gravação os mantém em dia a cada
+    // mudança) e voltam quando a mesma pessoa entrar de novo. Apagá-los aqui,
+    // como antes, fazia "Sair" destruir tudo o que ela tinha escrito.
     limparEstado();
     setState({ ...DEFAULT_STATE, theme: state.theme });
     setPerfil({ estado: 'carregando', id: null, name: null, email: null });
