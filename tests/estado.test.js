@@ -13,7 +13,7 @@ import { payloadDoToken, primeiroNome, iniciais, saudacao, nomeDeExibicao } from
 import { montarDisciplinas, temasDaDisciplina, prioridadeDeEstudo, corDaDisciplina } from '../src/lib/disciplinas.js';
 import { classificarRevisao, situacaoDaQuestao } from '../src/lib/revisao.js';
 import { respondidasPorDia, planoDaSemana, diasDoMes, resumoDoPlano } from '../src/lib/agenda.js';
-import { estatisticasDoPeriodo, evolucaoGeral, tempoPorDisciplina, formatarDuracao, diasAteProva } from '../src/lib/metrics.js';
+import { estatisticasDoPeriodo, evolucaoGeral, tempoPorDisciplina, formatarDuracao, diasAteProva, dateKey } from '../src/lib/metrics.js';
 
 const falhas = [];
 const exigir = (condicao, mensagem) => {
@@ -361,6 +361,16 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   exigir(diasAteProva({ dataProva: '2026-08-01' }, hoje) === 0, 'prova passada não pode dar negativo');
   // Sem data escolhida não há contagem — antes havia uma data fixa no código.
   exigir(diasAteProva({}, hoje) === null, 'sem data, null');
+
+  // A data da prova vem do `<input type="date">` como 'AAAA-MM-DD', sem hora.
+  // Lida como instante, ela vira meia-noite UTC, que no Brasil ainda é o dia
+  // anterior. Este arquivo roda em UTC e em America/Sao_Paulo (ver
+  // scripts/testes-lib.js): em qualquer um, o dia tem de continuar o mesmo.
+  exigir(dateKey('2026-08-22') === '2026-08-22', `data sem hora mudou de dia: veio ${dateKey('2026-08-22')}`);
+  // Na véspera, falta 1 dia — era aqui que o Brasil via "0".
+  exigir(diasAteProva({ dataProva: '2026-08-13' }, hoje) === 1, 'na véspera da prova deveria faltar 1 dia');
+  // Instante com hora continua convertido para o dia local de quem usa.
+  exigir(dateKey(new Date(2026, 7, 12, 23, 30)) === '2026-08-12', 'Date local das 23h30 mudou de dia');
 }
 
 // ---------------------------------------------------------------------------
