@@ -92,7 +92,24 @@ export function limparEstado() {
 const PREFIXO_CONTA = 'ma-questoes-conta-v1:';
 export const FATIAS_DA_CONTA = ['favoritos', 'anotacoes', 'resultados_historico'];
 
+// Campos dessas fatias que são da tela, e não da conta: a pasta aberta e a
+// nota selecionada mudam só de clicar. Se fossem para a chave da conta, uma
+// aba desatualizada sobrescreveria a nota nova da outra só porque alguém
+// abriu outra nota nela.
+const CAMPOS_DA_TELA = { anotacoes: ['folder', 'activeId'] };
+
 const chaveDaConta = (id) => `${PREFIXO_CONTA}${id}`;
+
+function recorteDaConta(estado) {
+  return Object.fromEntries(
+    FATIAS_DA_CONTA.filter((fatia) => estado[fatia] !== undefined).map((fatia) => {
+      const valor = estado[fatia];
+      const daTela = CAMPOS_DA_TELA[fatia];
+      if (!daTela || !ehObjetoSimples(valor)) return [fatia, valor];
+      return [fatia, Object.fromEntries(Object.entries(valor).filter(([campo]) => !daTela.includes(campo)))];
+    })
+  );
+}
 
 export function carregarDadosDaConta(id) {
   if (id == null) return {};
@@ -116,17 +133,16 @@ export function carregarDadosDaConta(id) {
 // abas da mesma conta abertas, a desatualizada sobrescrevia a nota que a outra
 // acabou de criar só porque alguém clicou no menu dela. Pular a gravação
 // quando os dados da conta não mudaram desde a última vez DESTA aba resolve
-// esse caso; editar na aba desatualizada ainda sobrescreve, como já acontecia
-// com o estado da interface.
+// isso — junto com `CAMPOS_DA_TELA` e com a chave valendo na abertura (ver
+// `estadoDaConta`). Editar dados da conta na aba desatualizada ainda
+// sobrescreve, como já acontecia com o estado da interface.
 const ultimaGravacao = new Map();
 
 export function salvarDadosDaConta(id, estado) {
   if (id == null) return;
   try {
     const chave = chaveDaConta(id);
-    const dados = JSON.stringify(
-      Object.fromEntries(FATIAS_DA_CONTA.map((fatia) => [fatia, estado[fatia]]))
-    );
+    const dados = JSON.stringify(recorteDaConta(estado));
     if (ultimaGravacao.get(chave) === dados) return;
 
     localStorage.setItem(chave, dados);
@@ -151,25 +167,32 @@ export function salvarDadosDaConta(id, estado) {
  */
 export function dadosNaAbertura(salvo, dadosDaConta) {
   if (salvo.__usuario != null || Object.keys(dadosDaConta).length > 0) return dadosDaConta;
-
-  return Object.fromEntries(
-    FATIAS_DA_CONTA.filter((fatia) => salvo[fatia] !== undefined).map((fatia) => [fatia, salvo[fatia]])
-  );
+  return recorteDaConta(salvo);
 }
 
 /**
  * O estado com que uma conta começa ao entrar.
  *
- * Mesma conta do estado salvo: segue como está. Outra conta, ou nenhuma
- * (depois de um logout): recomeça do padrão, mantendo o tema — que é do
- * aparelho, não da conta — e recupera os favoritos e as anotações guardados
- * para ela.
+ * Outra conta, ou nenhuma (depois de um logout): recomeça do padrão, mantendo
+ * o tema — que é do aparelho, não da conta — e recupera os favoritos, as
+ * anotações e o histórico de simulado guardados para ela.
+ *
+ * Mesma conta: a tela segue como está, mas os dados da conta vêm da chave
+ * dela. O estado da interface é regravado por qualquer aba a cada troca de
+ * tela; com duas abas abertas, a desatualizada deixava nele uma versão velha
+ * das notas, e recarregar a página a trazia de volta por cima da nova. A
+ * chave só é gravada quando os dados da conta mudam, então é ela que tem a
+ * versão mais recente.
  *
  * Pura de propósito: roda dentro de um updater do `setState`, então quem
  * chama lê `carregarDadosDaConta` antes e passa o resultado.
  */
 export function estadoDaConta(atual, id, defaults, dadosDaConta = {}) {
-  if (atual.__usuario != null && String(atual.__usuario) === String(id)) return atual;
+  // `mesclarComPadrao` desce um nível: da chave vêm só os campos que ela
+  // tem, e a pasta aberta e a nota selecionada desta aba ficam como estão.
+  if (atual.__usuario != null && String(atual.__usuario) === String(id)) {
+    return Object.keys(dadosDaConta).length === 0 ? atual : mesclarComPadrao(atual, dadosDaConta);
+  }
 
   return {
     ...mesclarComPadrao(defaults, dadosDaConta),

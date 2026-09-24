@@ -447,7 +447,10 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   const volta = estadoDaConta(deslogado, 7, padroesApp, carregarDadosDaConta(7));
   exigir(volta.favoritos.length === 1 && volta.favoritos[0] === '101', 'o favorito sumiu no logout');
   exigir(volta.anotacoes.itens[0]?.conteudo === nota.conteudo, 'a anotação sumiu no logout');
-  exigir(volta.anotacoes.activeId === 'nota-1', 'a nota aberta deveria voltar aberta');
+  // A nota selecionada é da tela, não da conta: volta sem seleção, e a tela
+  // de Anotações abre a primeira quando nenhuma está selecionada.
+  exigir(volta.anotacoes.activeId === null, 'a seleção de nota é da tela e não deveria vir da chave da conta');
+  exigir(!('activeId' in carregarDadosDaConta(7).anotacoes), 'a nota selecionada foi parar na chave da conta');
   // O histórico de simulado entra na meta do dia e na sequência: sumir com ele
   // mudava números da tela para quem só saiu e entrou de novo.
   exigir(
@@ -503,10 +506,22 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   // a versão anterior só marcava o dono quando o perfil carregava, e conta sem
   // perfil no servidor nunca era marcada. A chave dela ainda não existe — se o
   // estado sem dono fosse tratado como alheio, as notas iam embora ali.
-  const semDono = { ...padroesApp, __usuario: null, favoritos: ['55'], anotacoes: { folder: 'Todas', activeId: null, itens: [nota] } };
+  const semDono = {
+    ...padroesApp,
+    __usuario: null,
+    favoritos: ['55'],
+    anotacoes: { folder: 'Todas', activeId: null, itens: [nota] },
+    resultados_historico: [simulado],
+  };
   const naAbertura = estadoDaConta(semDono, 12, padroesApp, dadosNaAbertura(semDono, carregarDadosDaConta(12)));
   exigir(naAbertura.anotacoes.itens.length === 1, 'estado sem dono perdeu as anotações na primeira abertura depois da atualização');
   exigir(naAbertura.favoritos[0] === '55', 'estado sem dono perdeu os favoritos na primeira abertura');
+  exigir(naAbertura.resultados_historico.length === 1, 'estado sem dono perdeu o histórico de simulado na primeira abertura');
+
+  // No login, sem `dadosNaAbertura` — é o que o `entrar` do App faz: lá o
+  // estado sem dono pode ser de quem saiu antes, e não é adotado.
+  const noLogin = estadoDaConta(semDono, 14, padroesApp, carregarDadosDaConta(14));
+  exigir(noLogin.anotacoes.itens.length === 0 && noLogin.favoritos.length === 0, 'no login, o estado sem dono foi adotado pela conta que entrou');
   exigir(naAbertura.__usuario === 12, 'o estado adotado precisa ficar marcado com o dono do token');
 
   // Se a conta já tem chave, ela vence: o estado sem dono pode ser velho.
@@ -533,6 +548,33 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   // Mudar os dados da conta nesta aba, esse sim, grava.
   salvarDadosDaConta(13, { ...daAba, favoritos: ['1', '3'] });
   exigir(carregarDadosDaConta(13).favoritos.includes('3'), 'mudança de dado da conta deixou de ser gravada');
+
+  // O caso comum das duas abas, que o teste de cima não cobre: a aba
+  // desatualizada troca de tela (e com isso regrava o estado da interface com
+  // a versão velha das notas) e depois a página é recarregada. Na abertura, a
+  // chave da conta tem de valer para os dados dela — senão a versão velha
+  // volta e, com a aba nova sem memória do que gravou, vai parar na chave.
+  const n2 = { id: 'nota-2', titulo: 'Nota da outra aba', conteudo: 'nova' };
+  const abaVelha = {
+    ...padroesApp,
+    __usuario: 15,
+    screen: 'questoes',
+    anotacoes: { folder: 'Direito Penal', activeId: 'nota-1', itens: [nota] },
+  };
+  guardado['ma-questoes-conta-v1:15'] = JSON.stringify({ favoritos: [], anotacoes: { itens: [n2, nota] } });
+  const recarregada = estadoDaConta(abaVelha, 15, padroesApp, carregarDadosDaConta(15));
+  exigir(recarregada.anotacoes.itens.length === 2, 'recarregar a aba desatualizada trouxe de volta a versão velha das notas');
+  exigir(recarregada.anotacoes.folder === 'Direito Penal', 'a pasta aberta é da tela e não pode mudar ao recarregar');
+  exigir(recarregada.screen === 'questoes', 'mesma conta: a tela segue onde estava');
+
+  // Abrir outra nota ou trocar de pasta na aba desatualizada também não grava:
+  // seleção e pasta são da tela.
+  const abaQueSoClica = { ...padroesApp, __usuario: 16, anotacoes: { folder: 'Todas', activeId: 'nota-1', itens: [nota] } };
+  salvarDadosDaConta(16, abaQueSoClica);
+  const daOutra = JSON.stringify({ favoritos: [], anotacoes: { itens: [n2, nota] }, resultados_historico: [] });
+  guardado['ma-questoes-conta-v1:16'] = daOutra;
+  salvarDadosDaConta(16, { ...abaQueSoClica, anotacoes: { folder: 'Direito Penal', activeId: 'nota-x', itens: [nota] } });
+  exigir(guardado['ma-questoes-conta-v1:16'] === daOutra, 'abrir outra nota na aba desatualizada apagou a nota da outra aba');
 }
 
 if (falhas.length > 0) {
