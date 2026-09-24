@@ -114,7 +114,20 @@ function recorteDaConta(estado) {
 export function carregarDadosDaConta(id) {
   if (id == null) return {};
   try {
-    const parsed = JSON.parse(localStorage.getItem(chaveDaConta(id)) || '{}');
+    return lerDadosDaConta(localStorage.getItem(chaveDaConta(id)));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Os dados da conta a partir do texto gravado na chave — o que
+ * `carregarDadosDaConta` lê do localStorage, e o que chega no `newValue` do
+ * evento `storage` quando outra aba grava.
+ */
+export function lerDadosDaConta(texto) {
+  try {
+    const parsed = JSON.parse(texto || '{}');
     if (!ehObjetoSimples(parsed)) return {};
 
     // Só as fatias da conta, e sem os campos da tela: uma chave adulterada (ou
@@ -124,6 +137,12 @@ export function carregarDadosDaConta(id) {
   } catch {
     return {};
   }
+}
+
+/** O id da conta dona de uma chave do localStorage, ou `null` se não for chave de conta. */
+export function contaDaChave(chave) {
+  if (typeof chave !== 'string' || !chave.startsWith(PREFIXO_CONTA)) return null;
+  return chave.slice(PREFIXO_CONTA.length) || null;
 }
 
 // O que esta aba gravou por último em cada conta.

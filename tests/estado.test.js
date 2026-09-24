@@ -433,7 +433,7 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
 
   const {
     loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
-    dadosNaAbertura,
+    dadosNaAbertura, lerDadosDaConta, contaDaChave,
   } = await import('../src/lib/storage.js');
 
   const padroes = { theme: 'rosa', configuracoes: { meta: 20, dataProva: null }, favoritos: [] };
@@ -639,6 +639,23 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
   guardado['ma-questoes-conta-v1:16'] = daOutra;
   salvarDadosDaConta(16, { ...abaQueSoClica, anotacoes: { folder: 'Direito Penal', activeId: 'nota-x', itens: [nota] } });
   exigir(guardado['ma-questoes-conta-v1:16'] === daOutra, 'abrir outra nota na aba desatualizada apagou a nota da outra aba');
+
+  // O que chega de outra aba pelo evento `storage`: a chave e o texto gravado.
+  // Só chave de conta interessa, e do texto só as fatias da conta — um valor
+  // adulterado não troca o dono nem o tema desta aba.
+  exigir(contaDaChave('ma-questoes-conta-v1:42') === '42', 'chave de conta não reconhecida');
+  exigir(contaDaChave('ma-questoes-state-v1') === null, 'chave da interface tratada como chave de conta');
+  exigir(contaDaChave('ma-questoes-conta-v1:') === null, 'chave de conta sem id aceita');
+  exigir(contaDaChave(null) === null, 'localStorage.clear() (chave nula) tratado como chave de conta');
+  const deOutraAba = lerDadosDaConta(JSON.stringify({ favoritos: ['9'], anotacoes: { activeId: 'x', itens: [nota] }, __usuario: 99 }));
+  exigir(deOutraAba.favoritos[0] === '9' && deOutraAba.anotacoes.itens.length === 1, 'dados de outra aba não foram lidos');
+  exigir(!('__usuario' in deOutraAba) && !('activeId' in deOutraAba.anotacoes), 'dados de outra aba trouxeram campo que não é da conta');
+  exigir(Object.keys(lerDadosDaConta(null)).length === 0 && Object.keys(lerDadosDaConta('{quebrado')).length === 0, 'texto vazio ou inválido deveria virar vazio');
+  // E aplicados sobre a mesma conta, entram sem mexer na tela desta aba.
+  const estaAba = { ...padroesApp, __usuario: 42, screen: 'questoes', anotacoes: { folder: 'Penal', activeId: null, itens: [] } };
+  const sincronizada = estadoDaConta(estaAba, 42, padroesApp, deOutraAba);
+  exigir(sincronizada.anotacoes.itens.length === 1 && sincronizada.favoritos[0] === '9', 'dados da outra aba não entraram nesta');
+  exigir(sincronizada.screen === 'questoes' && sincronizada.anotacoes.folder === 'Penal', 'sincronizar com outra aba mexeu na tela desta');
 }
 
 if (falhas.length > 0) {

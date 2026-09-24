@@ -832,6 +832,33 @@ test.describe('Todas as telas', () => {
   // navegador, e o logout zerava o localStorage para a próxima pessoa não os
   // encontrar. Os dois lados têm de valer juntos — quem volta encontra o que
   // deixou, quem chega depois no mesmo navegador não encontra nada.
+  // Duas abas da mesma conta: a nota criada numa aparece na outra sem
+  // recarregar, e a outra — que não sabia dela — não a apaga ao editar.
+  // Antes, cada aba seguia com o que leu ao abrir, e a primeira edição na
+  // desatualizada regravava a chave da conta sem a nota nova.
+  test('duas abas da mesma conta veem as anotações uma da outra', async ({ page, context }) => {
+    await entrar(page);
+    const outra = await context.newPage();
+    await outra.goto('/');
+    await expect(outra.locator('[data-testid="nav-questoes"]')).toBeVisible();
+    await outra.click('[data-testid="nav-anotacoes"]');
+
+    const texto = `Nota da primeira aba ${Date.now()}`;
+    await page.click('[data-testid="nav-anotacoes"]');
+    await page.click('[data-testid="nova-anotacao"]');
+    await page.locator('textarea').fill(texto);
+
+    // A outra aba recebe pelo evento `storage`, sem recarregar.
+    await expect(outra.locator('textarea')).toHaveValue(texto, { timeout: 10000 });
+
+    // E editar nela não apaga o que veio da primeira.
+    await outra.click('[data-testid="nova-anotacao"]');
+    await outra.locator('textarea').fill('Nota da segunda aba');
+    await page.reload();
+    await page.click('[data-testid="nav-anotacoes"]');
+    await expect(page.locator(`text=Minhas anotações (2)`)).toBeVisible({ timeout: 10000 });
+  });
+
   test('sair não apaga as anotações, e outra conta não as vê', async ({ page }) => {
     const texto = `Anotação que sobrevive ao logout ${Date.now()}`;
     await entrar(page);
