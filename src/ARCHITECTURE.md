@@ -25,6 +25,7 @@ src/
 ├── components/ui/        # Componentes extraídos das telas
 │   ├── ConfigSimulado.jsx   # Formulário de configuração do simulado (Simulados)
 │   ├── Cronometro.jsx       # Timer do simulado (Simulados)
+│   ├── BotaoGoogle.jsx      # "Fazer login com o Google" (Login)
 │   └── GeradorQuestoes.jsx  # Gerador por IA — NÃO está em uso (ver Pendências)
 └── lib/                  # Lógica sem tela; a maior parte roda no `node` (ver "Rodar e testar")
     ├── api/api.js        # Único cliente HTTP do gateway
@@ -203,6 +204,14 @@ o outro) e enviado como `Authorization: Bearer`. Um 401 apaga o token salvo
 da sessão anterior não derruba quem entrou depois — e, no `App`, passa por
 `encerrarSessao`, que volta ao Login, venha de uma carga ou de uma gravação.
 
+**Login com o Google.** Pelo Google Identity Services (`BotaoGoogle.jsx`,
+script `accounts.google.com/gsi/client`). O botão só aparece, e o script só
+carrega, com `VITE_GOOGLE_CLIENT_ID` no build — na Vercel e, em dev, no
+`.env.local`. O mesmo Client ID precisa estar no auth-service
+(`GOOGLE_CLIENT_ID`); sem ele a rota responde 503. A origem de onde o front
+roda (o domínio da Vercel e `http://localhost:5173`) tem de estar nas
+"Origens JavaScript autorizadas" do Client ID no Google Cloud.
+
 **429.** Pedido autenticado recusado com 429 é repetido até três vezes, com
 espera (`retentativa.js`). O 429 vem do `limit_req` do nginx, antes de chegar
 a qualquer serviço, então repetir não grava nada em dobro. Login e cadastro
@@ -221,6 +230,7 @@ erro do acervo aparece na própria tela de Questões, com botão de recarregar.
 | Função | Rota | Observação |
 |---|---|---|
 | `login`, `criarConta` | `POST /api/auth/login`, `/register` | o register já devolve token |
+| `entrarComGoogle` | `POST /api/auth/google` | manda o ID token do Google; o auth-service confere e devolve o JWT da plataforma, criando a conta na primeira vez |
 | `buscarPerfil`, `salvarPerfil` | `GET`/`PUT /api/users/:id` | nome e `profile_data` |
 | `listarTentativas` → `buscarPaginaDeTentativas` | `GET /api/tentativas?limite=1000&paginado=1[&offset=N]` | percorre as páginas até somar `total` (`percorrerPaginas`, teto de 50 páginas; passando dele, a lista vem cortada e o aviso vai só para o console), descarta repetidas pelo id, aceita o formato antigo (array) e agrupa por questão, em ordem cronológica. No `App`, a carga é mesclada com o que foi respondido enquanto ela corria (`mesclarTentativas`) |
 | `registrarTentativa` | `POST /api/tentativas` | |
