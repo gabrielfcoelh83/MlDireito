@@ -29,16 +29,30 @@ if (arquivos.length === 0) {
   process.exit(1);
 }
 
+// Um teste de lib termina em segundos. O teto existe para o que não termina —
+// um `setInterval` esquecido, uma promessa que nunca resolve —, que sem ele
+// prenderia o job por horas e, no ci.yml, o e2e, o build e o deploy atrás.
+const TEMPO_MAXIMO_MS = 60_000;
+
 // Roda todos antes de reprovar: quem abriu o PR vê de uma vez tudo o que
 // quebrou, em vez de consertar um arquivo por rodada de CI.
 const reprovados = [];
 for (const arquivo of arquivos) {
   console.log(`\n▶ ${arquivo}`);
-  const { status } = spawnSync(process.execPath, [path.join(pasta, arquivo)], {
+  const { status, signal, error } = spawnSync(process.execPath, [path.join(pasta, arquivo)], {
     stdio: 'inherit',
     cwd: raiz,
+    timeout: TEMPO_MAXIMO_MS,
   });
-  if (status !== 0) reprovados.push(arquivo);
+  if (status !== 0) {
+    // Sem isto, processo morto por sinal ou por tempo reprovava sem dizer
+    // por quê: o log mostrava só o nome do arquivo e seguia para o próximo.
+    const motivo = error?.code === 'ETIMEDOUT'
+      ? `passou de ${TEMPO_MAXIMO_MS / 1000}s`
+      : signal ? `morto por ${signal}` : `saiu com código ${status}`;
+    console.error(`✖ ${arquivo}: ${motivo}`);
+    reprovados.push(arquivo);
+  }
 }
 
 if (reprovados.length > 0) {
