@@ -198,17 +198,20 @@ Todo acesso ao gateway passa por `lib/api/api.js`, com `fetch`. O `axios` do
 
 **Autenticação.** O login devolve um JWT, guardado em
 `ma-questoes-token-v1` (chave separada do estado, para limpar um não derrubar
-o outro) e enviado como `Authorization: Bearer`. Qualquer 401 apaga o token
-(`req` em `api.js`) e, no `App`, passa por `encerrarSessao`, que volta ao
-Login — venha de uma carga ou de uma gravação.
+o outro) e enviado como `Authorization: Bearer`. Um 401 apaga o token salvo
+(`req` em `api.js`) se ele ainda for o que a requisição usou — um 401 atrasado
+da sessão anterior não derruba quem entrou depois — e, no `App`, passa por
+`encerrarSessao`, que volta ao Login, venha de uma carga ou de uma gravação.
 
 **429.** Pedido autenticado recusado com 429 é repetido até três vezes, com
 espera (`retentativa.js`). O 429 vem do `limit_req` do nginx, antes de chegar
 a qualquer serviço, então repetir não grava nada em dobro. Login e cadastro
 não repetem: lá o limite existe contra quem tenta senha atrás de senha. As
-respostas de um simulado vão em fila (`registrarRespostas` + `fila.js`), uma
-de cada vez: todas juntas passavam do limite numa prova de 80 questões. A
-fila para se a sessão ou o token mudarem no meio.
+respostas de um simulado vão em fila (`registrarRespostas` + `fila.js`), quatro
+no ar de cada vez: todas juntas passavam do limite numa prova de 80 questões,
+e em série demoravam demais. A fila para se a sessão ou o token mudarem no
+meio, e enquanto ela corre o navegador pergunta antes de fechar ou recarregar
+a aba.
 
 **Erros.** Toda falha vira `ApiError(message, status)`. `status` 0 significa
 que a requisição não chegou (rede ou CORS — o navegador não deixa distinguir).
@@ -332,6 +335,9 @@ mostrou um dia a menos no Brasil com a CI verde.
     data da prova) e, com o 401, volta ao login sem dizer que a última
     alteração não foi salva. Ao entrar de novo, a tela pode mostrar um valor
     que o servidor não tem. O Login não tem onde mostrar esse aviso hoje.
+11. **Respostas do simulado na fila se perdem se a aba for descartada** — o
+    aviso de sair cobre fechar e recarregar, mas não a aba que o sistema
+    descarta (comum no celular) nem o navegador que fecha sem perguntar.
 
 ### Limpeza
 
