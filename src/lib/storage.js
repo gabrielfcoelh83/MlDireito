@@ -110,14 +110,51 @@ export function carregarDadosDaConta(id) {
   }
 }
 
+// O que esta aba gravou por último em cada conta.
+//
+// O App grava a cada mudança de estado — trocar de tela inclusive. Com duas
+// abas da mesma conta abertas, a desatualizada sobrescrevia a nota que a outra
+// acabou de criar só porque alguém clicou no menu dela. Pular a gravação
+// quando os dados da conta não mudaram desde a última vez DESTA aba resolve
+// esse caso; editar na aba desatualizada ainda sobrescreve, como já acontecia
+// com o estado da interface.
+const ultimaGravacao = new Map();
+
 export function salvarDadosDaConta(id, estado) {
   if (id == null) return;
   try {
-    const dados = Object.fromEntries(FATIAS_DA_CONTA.map((fatia) => [fatia, estado[fatia]]));
-    localStorage.setItem(chaveDaConta(id), JSON.stringify(dados));
+    const chave = chaveDaConta(id);
+    const dados = JSON.stringify(
+      Object.fromEntries(FATIAS_DA_CONTA.map((fatia) => [fatia, estado[fatia]]))
+    );
+    if (ultimaGravacao.get(chave) === dados) return;
+
+    localStorage.setItem(chave, dados);
+    ultimaGravacao.set(chave, dados);
   } catch {
     // modo privado ou quota: o que está na tela continua valendo nesta aba
   }
+}
+
+/**
+ * Os dados com que a conta do token abre o app.
+ *
+ * Normalmente, os da chave dela. A exceção é o estado salvo SEM dono por uma
+ * versão anterior do app, que só marcava o dono quando o perfil carregava — e,
+ * para conta sem perfil no servidor, nunca marcava. Tratar esse estado como
+ * alheio apagava os favoritos e as anotações dessa pessoa no primeiro acesso
+ * depois da atualização, porque a chave dela ainda não existia.
+ *
+ * Só na abertura, com o token já presente: quem escreveu esse estado foi a
+ * sessão deste token. No login não vale — lá, um estado sem dono pode ser de
+ * quem saiu antes.
+ */
+export function dadosNaAbertura(salvo, dadosDaConta) {
+  if (salvo.__usuario != null || Object.keys(dadosDaConta).length > 0) return dadosDaConta;
+
+  return Object.fromEntries(
+    FATIAS_DA_CONTA.filter((fatia) => salvo[fatia] !== undefined).map((fatia) => [fatia, salvo[fatia]])
+  );
 }
 
 /**

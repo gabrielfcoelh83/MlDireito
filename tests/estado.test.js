@@ -377,6 +377,7 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
 
   const {
     loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
+    dadosNaAbertura,
   } = await import('../src/lib/storage.js');
 
   const padroes = { theme: 'rosa', configuracoes: { meta: 20, dataProva: null }, favoritos: [] };
@@ -497,6 +498,41 @@ const t = (correta, data = '2026-08-10T10:00:00Z', tempo = null) => ({ correta, 
     !Object.keys(guardado).some((k) => k.startsWith('ma-questoes-conta-v1:null') || k.startsWith('ma-questoes-conta-v1:undefined')),
     'gravou dados de conta sem conta — o estado depois do logout sobrescreveria alguém'
   );
+
+  // Primeira abertura depois da atualização, para quem tinha estado SEM dono:
+  // a versão anterior só marcava o dono quando o perfil carregava, e conta sem
+  // perfil no servidor nunca era marcada. A chave dela ainda não existe — se o
+  // estado sem dono fosse tratado como alheio, as notas iam embora ali.
+  const semDono = { ...padroesApp, __usuario: null, favoritos: ['55'], anotacoes: { folder: 'Todas', activeId: null, itens: [nota] } };
+  const naAbertura = estadoDaConta(semDono, 12, padroesApp, dadosNaAbertura(semDono, carregarDadosDaConta(12)));
+  exigir(naAbertura.anotacoes.itens.length === 1, 'estado sem dono perdeu as anotações na primeira abertura depois da atualização');
+  exigir(naAbertura.favoritos[0] === '55', 'estado sem dono perdeu os favoritos na primeira abertura');
+  exigir(naAbertura.__usuario === 12, 'o estado adotado precisa ficar marcado com o dono do token');
+
+  // Se a conta já tem chave, ela vence: o estado sem dono pode ser velho.
+  exigir(
+    dadosNaAbertura(semDono, carregarDadosDaConta(7)).anotacoes?.itens[0]?.id === 'nota-1'
+      && dadosNaAbertura(semDono, carregarDadosDaConta(7)).favoritos[0] === '101',
+    'com a chave da conta existindo, o estado sem dono não pode passar por cima dela'
+  );
+  // E estado com dono nunca é adotado por outra conta.
+  exigir(
+    Object.keys(dadosNaAbertura({ ...semDono, __usuario: 7 }, {})).length === 0,
+    'estado de outra conta foi adotado na abertura'
+  );
+
+  // Duas abas da mesma conta: a desatualizada não pode sobrescrever a nota
+  // nova da outra só porque alguém trocou de tela nela (o efeito do App grava
+  // a cada mudança de estado, e trocar de tela é uma).
+  const daAba = { ...padroesApp, __usuario: 13, favoritos: ['1'] };
+  salvarDadosDaConta(13, daAba);
+  const daOutraAba = JSON.stringify({ favoritos: ['1', '2'], anotacoes: { itens: [nota] } });
+  guardado['ma-questoes-conta-v1:13'] = daOutraAba;
+  salvarDadosDaConta(13, { ...daAba, screen: 'questoes' });
+  exigir(guardado['ma-questoes-conta-v1:13'] === daOutraAba, 'trocar de tela na aba desatualizada apagou a nota da outra aba');
+  // Mudar os dados da conta nesta aba, esse sim, grava.
+  salvarDadosDaConta(13, { ...daAba, favoritos: ['1', '3'] });
+  exigir(carregarDadosDaConta(13).favoritos.includes('3'), 'mudança de dado da conta deixou de ser gravada');
 }
 
 if (falhas.length > 0) {

@@ -4,6 +4,7 @@ import { Icon } from './lib/icons';
 import { NAV, PAGE_META } from './lib/navegacao';
 import {
   loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
+  dadosNaAbertura,
 } from './lib/storage';
 import { diasAteProva, metaDiaria, sequenciaAtual } from './lib/metrics';
 import { montarDisciplinas } from './lib/disciplinas';
@@ -70,7 +71,8 @@ export default function App() {
   const [state, setState] = useState(() => {
     const salvo = loadState(DEFAULT_STATE);
     const conta = contaDoToken();
-    return conta ? estadoDaConta(salvo, conta.id, DEFAULT_STATE, conta.dados) : salvo;
+    if (!conta) return salvo;
+    return estadoDaConta(salvo, conta.id, DEFAULT_STATE, dadosNaAbertura(salvo, conta.dados));
   });
   const [notifOpen, setNotifOpen] = useState(false);
   const [sessao, setSessao] = useState(() => (getToken() ? 'ativa' : 'ausente'));
