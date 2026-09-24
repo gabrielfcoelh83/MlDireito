@@ -218,6 +218,12 @@ senha"): o cadastro por senha não confirma o e-mail, e ligar entregaria a
 conta a quem cadastrou o e-mail de outra pessoa. Ligar o Google a uma conta
 com senha, com a pessoa já logada, ainda não existe.
 
+Para funcionar em produção falta configuração: o `GOOGLE_CLIENT_ID` precisa
+chegar ao auth-service pelo `docker-compose.prod.yml` e pelo `.env` que o
+workflow de deploy do TaskManager gera. Sem isso o botão aparece (se a
+Vercel tiver o Client ID) e todo clique responde "ainda não está
+disponível".
+
 **429.** Pedido autenticado recusado com 429 é repetido até três vezes, com
 espera (`retentativa.js`). O 429 vem do `limit_req` do nginx, antes de chegar
 a qualquer serviço, então repetir não grava nada em dobro. Login e cadastro
@@ -354,6 +360,10 @@ mostrou um dia a menos no Brasil com a CI verde.
 11. **Respostas do simulado na fila se perdem se a aba for descartada** — o
     aviso de sair cobre fechar e recarregar, mas não a aba que o sistema
     descarta (comum no celular) nem o navegador que fecha sem perguntar.
+12. **E-mail cadastrado por outra pessoa bloqueia o Google** — como o
+    cadastro por senha não confirma o e-mail, quem cadastrou o e-mail de
+    outra pessoa impede o dono de entrar pelo Google (409), e não existe
+    "esqueci a senha". O dono não é invadido, mas fica sem acesso.
 
 ### Limpeza
 
