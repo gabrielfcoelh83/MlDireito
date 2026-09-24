@@ -860,11 +860,10 @@ test.describe('Todas as telas', () => {
     // As duas estão inteiras na chave da conta, sem eco que tenha cortado o
     // texto digitado tecla por tecla. (Qual nota abre selecionada depende de
     // qual aba gravou a tela por último — não é o que este teste mede.)
-    const conteudos = await page.evaluate(() => {
+    await expect.poll(() => page.evaluate(() => {
       const chave = Object.keys(localStorage).find((k) => k.startsWith('ma-questoes-conta-v1:'));
       return JSON.parse(localStorage.getItem(chave)).anotacoes.itens.map((n) => n.conteudo);
-    });
-    expect(conteudos).toEqual(['Nota da segunda aba', texto]);
+    }), { timeout: 10000 }).toEqual(['Nota da segunda aba', texto]);
   });
 
   // "Sair" apagava favoritos e anotações de vez: eles só existem neste

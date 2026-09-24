@@ -197,7 +197,11 @@ export default function App() {
       // Antes de aplicar: senão esta aba devolveria à chave, atrasada, a
       // versão que acabou de receber (ver `registrarRecebido`).
       registrarRecebido(id, evento.newValue);
-      setState((st) => estadoDaConta(st, st.__usuario, DEFAULT_STATE, dados));
+      // Confere de novo no updater: um "Sair" na fila entre o evento e aqui
+      // deixaria o estado sem dono, e os dados da conta entrariam nele.
+      setState((st) => (String(st.__usuario) === String(id)
+        ? estadoDaConta(st, st.__usuario, DEFAULT_STATE, dados)
+        : st));
     };
 
     window.addEventListener('storage', aoMudar);
