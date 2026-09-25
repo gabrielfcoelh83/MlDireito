@@ -45,7 +45,11 @@ const LEI = '(?:lei|l\\.)\\s+(?:federal\\s+)?(?:n(?:[º°o]|\\.\\s*[º°o]?)?\\s
 const LEI_COM_SIGLA = { 8078: 'CDC', 8069: 'ECA', 10406: 'CC', 13105: 'CPC', 13709: 'LGPD', 13146: 'EPD' };
 
 const FIM_DE_PALAVRA = '(?![\\p{L}\\d])';
-const INICIO_DE_PALAVRA = '(?<![\\p{L}\\d])';
+// Início de palavra SEM lookbehind: essa sintaxe é SyntaxError no Safari antes
+// do 16.4, e este módulo é importado pelo App — o app inteiro não carregaria.
+// Um grupo que consome o caractere anterior faz o mesmo papel; quem precisa
+// da posição exata soma o tamanho do grupo 1 (ver `extrairCitacoes`).
+const INICIO_DE_PALAVRA = '(^|[^\\p{L}\\d])';
 
 const sticky = (fonte, i) => new RegExp(fonte + FIM_DE_PALAVRA, i ? 'iuy' : 'uy');
 const noFim = (fonte, i) => new RegExp(INICIO_DE_PALAVRA + '(?:' + fonte + ')[\\s,]*$', i ? 'iu' : 'u');
@@ -54,6 +58,9 @@ const DIPLOMA_EM = DIPLOMAS.flatMap((d) => [
   { id: d.id, re: sticky(d.nome, true) },
   ...(d.sigla ? [{ id: d.id, re: sticky(d.sigla, false) }] : []),
 ]);
+// "do cc", "da cf": sigla em minúscula só vale logo depois da preposição —
+// solta no texto, "cc" e "cf." são outra coisa.
+const SIGLA_MINUSCULA_EM = DIPLOMAS.filter((d) => d.sigla).map((d) => ({ id: d.id, re: sticky(d.sigla, true) }));
 const DIPLOMA_ANTES = DIPLOMAS.flatMap((d) => [
   { id: d.id, re: noFim(d.nome, true) },
   ...(d.sigla ? [{ id: d.id, re: noFim(d.sigla, false) }] : []),
@@ -67,8 +74,8 @@ function idDaLei(numero) {
 }
 
 // O diploma que começa exatamente em `pos`.
-function diplomaEm(texto, pos) {
-  for (const { id, re } of DIPLOMA_EM) {
+function diplomaEm(texto, pos, depoisDePreposicao = false) {
+  for (const { id, re } of depoisDePreposicao ? [...DIPLOMA_EM, ...SIGLA_MINUSCULA_EM] : DIPLOMA_EM) {
     re.lastIndex = pos;
     const m = re.exec(texto);
     if (m) return { id, fim: pos + m[0].length };
@@ -80,7 +87,7 @@ function diplomaEm(texto, pos) {
 }
 
 // "…, do CC", " da Lei nº 8.078/90", " (CPC)", ", ambos do CC", ", do mesmo diploma".
-const ANTES_DO_DIPLOMA = /[\s,]*\(?\s*(?:amb[oa]s\s+)?(?:(?:d[oa]s?|n[oa]s?|em)\s+)?/iuy;
+const ANTES_DO_DIPLOMA = /[\s,]*\(?\s*(?:amb[oa]s\s+)?(?:(d[oa]s?|n[oa]s?|em)\s+)?/iuy;
 const MESMO_DIPLOMA = new RegExp('mesm[oa]\\s+(?:diploma|c[óo]digo|lei|estatuto)' + FIM_DE_PALAVRA, 'iuy');
 
 function diplomaAdiante(texto, pos) {
@@ -92,7 +99,7 @@ function diplomaAdiante(texto, pos) {
   const mesmo = MESMO_DIPLOMA.exec(texto);
   if (mesmo) return { id: null, mesmo: true, fim: inicio + mesmo[0].length };
 
-  const achado = diplomaEm(texto, inicio);
+  const achado = diplomaEm(texto, inicio, Boolean(filler?.[1]));
   if (!achado) return null;
   let fim = achado.fim;
   if (texto[fim] === ')') fim += 1;
@@ -106,7 +113,8 @@ function diplomaAtras(texto, pos) {
     if (re.test(trecho)) return id;
   }
   const lei = LEI_ANTES.exec(trecho);
-  return lei ? idDaLei(lei[1]) : null;
+  // lei[1] é o caractere antes da palavra (INICIO_DE_PALAVRA).
+  return lei ? idDaLei(lei[2]) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +122,10 @@ function diplomaAtras(texto, pos) {
 // ---------------------------------------------------------------------------
 
 const RE_ART = new RegExp(INICIO_DE_PALAVRA + '(?:arts?\\.?|artigos?)\\s*(?=\\d)', 'giu');
+
+// "c/c", "C/C", "c.c." (combinado com): ligam artigos. Sem esta checagem o
+// "C" de "C/C" era lido como inciso romano e o artigo seguinte sumia.
+const RE_CC = /(?:c\/c|c\.\s*c\.)(?![\p{L}\d])/iuy;
 
 // 1.659 e 1659 são o mesmo artigo; "5º" e "5o" também. "1.240-A" existe.
 const RE_NUMERO = /(\d{1,3}(?:\.\d{3})+|\d+)(?:\s*[º°o](?![\p{L}\d]))?(?:\s*-\s*([A-Z])(?![\p{L}\d]))?/uy;
@@ -137,11 +149,20 @@ const RE_DETALHE = new RegExp(
 const RE_ESPACO_VIRGULA = /[\s,]*/y;
 
 // Entre um artigo e o próximo do mesmo grupo: "arts. 186 e 927",
-// "art. 186 c/c 927", "art. 876 ou 877", "arts. 186, 187 e 927".
+// "art. 186 c/c 927", "art. 876 ou 877", "arts. 186, 187 e 927",
+// "arts. 186 a 188" (intervalo).
 const RE_CONTINUACAO = new RegExp(
-  '[\\s,]*(?:(e|ou|c\\/c|c\\.c\\.)\\s+)?(?:(?:o|os|do|dos|no|nos)\\s+)?(?:(?:arts?\\.?|artigos?)\\s*)?(?=\\d)',
+  '[\\s,]*(?:(e|ou|a|at[ée]|c\\/c|c\\.\\s*c\\.)\\s+)?(?:(?:o|os|do|dos|no|nos)\\s+)?((?:arts?\\.?|artigos?)\\s*)?(?=\\d)',
   'iuy',
 );
+// Depois que o diploma fechou o grupo: "artigo 496 do Código Civil e 179 do
+// CC", "Art. 787 do CC ou do Art. 125 do CPC". Aqui o conector é obrigatório.
+const RE_CONTINUACAO_DEPOIS_DO_DIPLOMA = new RegExp(
+  '[\\s,;]*(e|ou|c\\/c|c\\.\\s*c\\.)\\s+(?:(?:o|os|do|dos|da|das|no|nos|ao|aos)\\s+)?((?:arts?\\.?|artigos?)\\s*)?(?=\\d)',
+  'iuy',
+);
+// Intervalo maior que isto é mais provável erro de leitura que citação.
+const MAX_INTERVALO = 30;
 // Um número só continua o grupo se o que vem depois tem cara de citação.
 // Sem isto, "art. 186 e 10 testemunhas" citaria um art. 10.
 const RE_DEPOIS_DO_NUMERO = /(?:[º°o](?![\p{L}\d])|\s*-\s*[A-Z](?![\p{L}\d])|\s*(?:[,;.:)]|$|§|\(|(?:e|ou|d[oa]s?|n[oa]s?|c\/c|caput|inciso|par[áa]grafo|al[íi]nea)(?![\p{L}\d])))/iuy;
@@ -161,6 +182,8 @@ function lerDetalhes(texto, pos) {
     RE_ESPACO_VIRGULA.lastIndex = q;
     const inicio = q + RE_ESPACO_VIRGULA.exec(texto)[0].length;
     if (diplomaAdiante(texto, q)) break;
+    RE_CC.lastIndex = inicio;
+    if (RE_CC.test(texto)) break;
     RE_DETALHE.lastIndex = inicio;
     const m = RE_DETALHE.exec(texto);
     if (!m) break;
@@ -168,6 +191,24 @@ function lerDetalhes(texto, pos) {
     q = inicio + m[0].length;
   }
   return { detalhe: detalhes.join(', '), fim: q };
+}
+
+// O próximo número de um encadeamento, se houver: `{ pos, conector }`.
+// Sem "art." antes, o número só conta se o que vem depois tem cara de
+// citação ("e 10 testemunhas" não é o art. 10).
+function continuacao(texto, pos, re) {
+  re.lastIndex = pos;
+  const cont = re.exec(texto);
+  if (!cont) return null;
+  const inicioNumero = pos + cont[0].length;
+  const proximo = lerNumero(texto, inicioNumero);
+  if (!proximo) return null;
+  if (!cont[2]) {
+    RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;
+    if (!RE_DEPOIS_DO_NUMERO.test(texto)) return null;
+  }
+  const conector = cont[1] ? cont[1].toLowerCase().replace(/\s+/g, '') : null;
+  return { pos: inicioNumero, conector: conector === 'c.c.' ? 'c/c' : conector };
 }
 
 function lerGrupoDeArtigos(texto, pos) {
@@ -179,20 +220,24 @@ function lerGrupoDeArtigos(texto, pos) {
     const numero = lerNumero(texto, q);
     if (!numero) break;
     const { detalhe, fim } = lerDetalhes(texto, numero.fim);
+
+    // "arts. 186 a 188": os do meio também foram citados.
+    const anterior = artigos.at(-1);
+    if (conector === 'a' || conector === 'até' || conector === 'ate') {
+      const de = Number(anterior?.artigo);
+      const ate = Number(numero.artigo);
+      if (Number.isInteger(de) && Number.isInteger(ate) && ate > de && ate - de <= MAX_INTERVALO) {
+        for (let n = de + 1; n < ate; n++) artigos.push({ artigo: String(n), detalhe: '', alternativaDaAnterior: false });
+      }
+    }
     artigos.push({ artigo: numero.artigo, detalhe, alternativaDaAnterior: conector === 'ou' });
     q = fim;
 
     if (diplomaAdiante(texto, q)) break;
-    RE_CONTINUACAO.lastIndex = q;
-    const cont = RE_CONTINUACAO.exec(texto);
+    const cont = continuacao(texto, q, RE_CONTINUACAO);
     if (!cont) break;
-    const inicioNumero = q + cont[0].length;
-    const proximo = lerNumero(texto, inicioNumero);
-    if (!proximo) break;
-    RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;
-    if (!RE_DEPOIS_DO_NUMERO.test(texto)) break;
-    conector = cont[1] ? cont[1].toLowerCase() : null;
-    q = inicioNumero;
+    conector = cont.conector;
+    q = cont.pos;
   }
 
   return { artigos, fim: q };
@@ -274,35 +319,56 @@ export function extrairCitacoes(texto) {
   RE_ART.lastIndex = 0;
   let m;
   while ((m = RE_ART.exec(fonte))) {
-    const inicio = m.index;
-    const grupo = lerGrupoDeArtigos(fonte, inicio + m[0].length);
-    if (grupo.artigos.length === 0) continue;
+    // O grupo 1 é o caractere antes da palavra (ver INICIO_DE_PALAVRA).
+    let inicio = m.index + m[1].length;
+    let pos = m.index + m[0].length;
+    let conector = null;
+    let herdado = null;
+    let primeiro = true;
 
-    let fim = grupo.fim;
-    let diploma = null;
-    const adiante = diplomaAdiante(fonte, grupo.fim);
-    if (adiante) {
-      fim = adiante.fim;
-      diploma = adiante.mesmo ? (citacoes.filter((c) => c.tipo === 'artigo').at(-1)?.diploma ?? null) : adiante.id;
-    } else {
-      diploma = diplomaAtras(fonte, inicio);
-    }
+    // Um grupo, e os que vêm encadeados depois do diploma dele.
+    for (;;) {
+      const grupo = lerGrupoDeArtigos(fonte, pos);
+      if (grupo.artigos.length === 0) break;
 
-    for (const a of grupo.artigos) {
-      const citacao = {
-        tipo: 'artigo', diploma, artigo: a.artigo, detalhe: a.detalhe,
-        alternativaDaAnterior: a.alternativaDaAnterior, inicio, fim,
-      };
-      citacoes.push({ ...citacao, chave: chaveDe(citacao), rotulo: rotuloDe(citacao) });
+      let fim = grupo.fim;
+      let diploma = null;
+      const adiante = diplomaAdiante(fonte, grupo.fim);
+      if (adiante) {
+        fim = adiante.fim;
+        diploma = adiante.mesmo ? (citacoes.filter((c) => c.tipo === 'artigo').at(-1)?.diploma ?? null) : adiante.id;
+      } else {
+        // "…do CC e 179": sem lei própria, é a do grupo de antes.
+        diploma = primeiro ? diplomaAtras(fonte, inicio) : herdado;
+      }
+
+      grupo.artigos.forEach((a, i) => {
+        const citacao = {
+          tipo: 'artigo', diploma, artigo: a.artigo, detalhe: a.detalhe,
+          alternativaDaAnterior: i === 0 && !primeiro ? conector === 'ou' : a.alternativaDaAnterior,
+          inicio, fim,
+        };
+        citacoes.push({ ...citacao, chave: chaveDe(citacao), rotulo: rotuloDe(citacao) });
+      });
+      RE_ART.lastIndex = Math.max(RE_ART.lastIndex, fim);
+
+      if (!adiante) break;
+      const cont = continuacao(fonte, fim, RE_CONTINUACAO_DEPOIS_DO_DIPLOMA);
+      if (!cont) break;
+      conector = cont.conector;
+      herdado = diploma;
+      primeiro = false;
+      inicio = cont.pos;
+      pos = cont.pos;
     }
-    RE_ART.lastIndex = Math.max(RE_ART.lastIndex, grupo.fim);
   }
 
   RE_SUMULA.lastIndex = 0;
   while ((m = RE_SUMULA.exec(fonte))) {
+    const inicio = m.index + m[1].length;
     const citacao = {
-      tipo: 'sumula', vinculante: Boolean(m[1]), numero: m[2], tribunal: tribunal(m[3], m[1]),
-      detalhe: '', alternativaDaAnterior: false, inicio: m.index, fim: m.index + m[0].length,
+      tipo: 'sumula', vinculante: Boolean(m[2]), numero: m[3], tribunal: tribunal(m[4], m[2]),
+      detalhe: '', alternativaDaAnterior: false, inicio, fim: m.index + m[0].length,
     };
     citacoes.push({ ...citacao, chave: chaveDe(citacao), rotulo: rotuloDe(citacao) });
   }

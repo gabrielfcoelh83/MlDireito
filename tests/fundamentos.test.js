@@ -10,7 +10,7 @@ import {
   extrairCitacoes, esperadosDoGabarito, compararFundamentos, conferirQuestao, formatarArtigo,
   caminhosDoGabarito,
 } from '../src/lib/fundamentos.js';
-import { agruparPorExame, formatarValor, respostasPreenchidas } from '../src/lib/discursivas.js';
+import { agruparPorExame, formatarValor, respostasPreenchidas, mesmoRascunho } from '../src/lib/discursivas.js';
 
 const falhas = [];
 const exigir = (condicao, mensagem) => {
@@ -61,6 +61,49 @@ exigirChaves('art. 6º, VIII, CDC', ['CDC:6']);
   exigir(c.rotulo === 'Art. 1.659 do CC', `rótulo: "${c?.rotulo}"`);
   const [d] = extrairCitacoes('art. 876, §5º ou §6º, do CPC');
   exigir(d.detalhe === '§5º ou §6º', `detalhe dos parágrafos: "${d?.detalhe}"`);
+}
+
+// ---- Encadeamentos (achados da revisão) ------------------------------------
+
+// "C/C" em maiúsculas: o "C" era lido como inciso romano e o 927 sumia.
+exigirChaves('art. 186 C/C 927 do CC', ['CC:186', 'CC:927']);
+exigirChaves('art. 186 c.c. 927 do CC', ['CC:186', 'CC:927']);
+{
+  const cs = extrairCitacoes('Art. 186 C/C Art. 927 do CC');
+  exigir(igual(cs.map((c) => c.chave), ['CC:186', 'CC:927']), `"C/C Art.": ${JSON.stringify(cs.map((c) => c.chave))}`);
+  exigir(cs[0]?.detalhe === '', `"C/C" não é detalhe do 186: "${cs[0]?.detalhe}"`);
+}
+// O diploma fechou o primeiro grupo; o "e 179" continua, com a lei dele.
+exigirChaves('artigo 496 do Código Civil e 179 do CC', ['CC:496', 'CC:179']);
+exigirChaves('art. 496 do CC e 179', ['CC:496', 'CC:179']);
+exigirChaves('Art. 14 do CDC e art. 186 do CC', ['CDC:14', 'CC:186']);
+exigirChaves('art. 14 do CDC e 10 dias depois', ['CDC:14']);
+// Intervalo: os do meio também contam.
+exigirChaves('arts. 186 a 188 do CC', ['CC:186', 'CC:187', 'CC:188']);
+exigirChaves('arts. 186 até 188 do CC', ['CC:186', 'CC:187', 'CC:188']);
+{
+  const r = compararFundamentos('Conforme os arts. 186 a 188 do CC.', 'Sim, nos termos do Art. 187 do CC.');
+  exigir(r.atendidos.length === 1, 'intervalo atende o artigo do meio');
+}
+exigirChaves('art. 5º a 10 dias', ['?:5']);
+// Sigla minúscula logo depois da preposição.
+exigirChaves('art. 186 do cc', ['CC:186']);
+exigirChaves('art. 319 do cpc', ['CPC:319']);
+exigirChaves('art. 14 do cdc', ['CDC:14']);
+exigirChaves('art. 5º da cf', ['CF:5']);
+exigirChaves('art. 150 do ctn', ['CTN:150']);
+exigirChaves('art. 7º da clt', ['CLT:7']);
+// Sem a preposição, minúscula continua não sendo sigla.
+exigirChaves('art. 186, cc', ['?:186']);
+
+// ---- Sem lookbehind ---------------------------------------------------------
+//
+// Lookbehind é SyntaxError no Safari antes do 16.4, e este módulo é
+// importado pelo App: o app inteiro deixaria de carregar.
+{
+  const { readFileSync } = await import('node:fs');
+  const codigo = readFileSync(new URL('../src/lib/fundamentos.js', import.meta.url), 'utf8');
+  exigir(!codigo.includes('(?<'), 'fundamentos.js usa lookbehind');
 }
 
 // ---- Extração: o que NÃO é citação --------------------------------------
@@ -275,6 +318,11 @@ exigir(formatarValor(null) === null, 'sem valor');
 
 exigir(respostasPreenchidas({ A: '  ', B: 'x' }) === 1, 'conta só item com texto');
 exigir(respostasPreenchidas(undefined) === 0, 'sem respostas');
+
+// O rascunho só sai depois do POST se ainda for o texto enviado.
+exigir(mesmoRascunho({ A: 'x' }, { A: 'x', B: '' }), 'item ausente no rascunho vale como vazio');
+exigir(!mesmoRascunho({ A: 'x', B: 'novo' }, { A: 'x', B: '' }), 'edição feita depois do envio não é o mesmo rascunho');
+exigir(!mesmoRascunho({ A: 'xy' }, { A: 'x' }), 'texto alterado não é o mesmo rascunho');
 
 if (falhas.length > 0) {
   console.error(`\n❌ ${falhas.length} problema(s):`);
