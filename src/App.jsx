@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { THEMES, buildStyles } from './lib/theme';
 import { Icon } from './lib/icons';
-import { NAV, PAGE_META } from './lib/navegacao';
+import { NAV, PAGE_META, FASE_PADRAO, faseValida } from './lib/navegacao';
 import {
   loadState, saveState, limparEstado, carregarDadosDaConta, salvarDadosDaConta, estadoDaConta,
   dadosNaAbertura, lerDadosDaConta, contaDaChave, registrarRecebido,
@@ -16,8 +16,9 @@ import { enviarEmFila } from './lib/fila';
 import { payloadDoToken, saudacao, iniciais, nomeDeExibicao } from './lib/perfil';
 import {
   TOKEN_KEY, getToken, logout, listarTentativas, listarQuestoes, registrarTentativa,
-  buscarPerfil, salvarPerfil,
+  buscarPerfil, salvarPerfil, salvarRespostaDiscursiva,
 } from './lib/api/api';
+import SeletorDeFase from './components/ui/SeletorDeFase';
 
 import Login from './screens/Login';
 import Dashboard from './screens/Dashboard';
@@ -31,6 +32,7 @@ import Disciplinas from './screens/Disciplinas';
 import Anotacoes from './screens/Anotacoes';
 import Favoritos from './screens/Favoritos';
 import Configuracoes from './screens/Configuracoes';
+import SegundaFase from './screens/SegundaFase';
 
 // O que é da INTERFACE começa aqui. O que é da PESSOA — nome, e-mail, meta,
 // data da prova — vem do servidor: até esta versão, `configuracoes` trazia
@@ -42,9 +44,15 @@ import Configuracoes from './screens/Configuracoes';
 // anotações e histórico de simulado da pessoa anterior. Esses três também
 // ficam guardados por conta (`salvarDadosDaConta`), e é de lá que voltam
 // quando a mesma pessoa entra de novo.
+//
+// `fase` e `segundaFase` são da interface, como `screen`: qual prova está na
+// tela, a questão discursiva aberta e os rascunhos ainda não conferidos. As
+// respostas conferidas vão para o servidor; o rascunho fica neste navegador
+// até ser conferido e sai junto com o estado no "Sair".
 const DEFAULT_STATE = {
   __usuario: null,
   theme: 'rosa',
+  fase: FASE_PADRAO,
   screen: 'dashboard',
   dashboard: { period: '7' },
   cronograma: {},
@@ -58,7 +66,10 @@ const DEFAULT_STATE = {
   favoritos: [],
   configuracoes: { meta: 20, dataProva: null },
   resultados_historico: [],
+  segundaFase: { questaoId: null, rascunhos: {} },
 };
+
+const TELA_ESTREITA = '(max-width: 760px)';
 
 // A conta dona do estado sai do token, que está aqui na hora; o perfil só a
 // confirma depois, pela rede. Esperar por ele deixava quem entrava ver, por um
@@ -77,6 +88,18 @@ export default function App() {
     return estadoDaConta(salvo, conta.id, DEFAULT_STATE, dadosNaAbertura(salvo, conta.dados));
   });
   const [notifOpen, setNotifOpen] = useState(false);
+
+  // Tela estreita (celular). Só a página da 2ª fase se adapta por enquanto: a
+  // barra lateral de 232px ocupava mais da metade da tela e espremia o campo
+  // de resposta. A 1ª fase segue sem layout de celular (ver Pendências).
+  const [estreita, setEstreita] = useState(() => window.matchMedia?.(TELA_ESTREITA).matches ?? false);
+  useEffect(() => {
+    const consulta = window.matchMedia?.(TELA_ESTREITA);
+    if (!consulta) return undefined;
+    const mudar = (e) => setEstreita(e.matches);
+    consulta.addEventListener('change', mudar);
+    return () => consulta.removeEventListener('change', mudar);
+  }, []);
   const [sessao, setSessao] = useState(() => (getToken() ? 'ativa' : 'ausente'));
   const [erroSync, setErroSync] = useState(null);
   const [usuarioTentativas, setUsuarioTentativas] = useState({});
@@ -370,6 +393,27 @@ export default function App() {
       });
   };
 
+  // Resposta discursiva: mesma regra das outras gravações. Devolve a linha
+  // salva, ou `null` se a sessão acabou com o POST no ar (a tela não mostra
+  // nada para quem entrar depois). Outro erro sobe para a tela, que o mostra
+  // junto da própria resposta — a faixa do topo ficaria longe dela.
+  const gravarRespostaDiscursiva = async (resposta) => {
+    const epoch = sessaoEpoch.current;
+    try {
+      const salva = await salvarRespostaDiscursiva(resposta);
+      return sessaoEpoch.current === epoch ? salva : null;
+    } catch (err) {
+      if (sessaoEpoch.current !== epoch) return null;
+      if (err.status === 401) { encerrarSessao(); return null; }
+      throw err;
+    }
+  };
+
+  const trocarFase = (chave) => {
+    setNotifOpen(false);
+    setState((st) => ({ ...st, fase: faseValida(chave).chave }));
+  };
+
   const atualizarNome = async (nome) => {
     if (perfil.id == null) return false;
     const epoch = sessaoEpoch.current;
@@ -537,6 +581,116 @@ export default function App() {
   }
 
   const nome = nomeDeExibicao(perfil, perfil.email);
+  const fase = faseValida(state.fase);
+
+  // "Ver perfil" leva às Configurações, que são da 1ª fase: da 2ª, troca de
+  // fase junto — senão o clique mudaria uma tela que não está à vista.
+  const verPerfil = () => setState((st) => ({ ...st, fase: FASE_PADRAO, screen: 'configuracoes' }));
+
+  const linhaDoPerfil = (
+    <div style={s.profileRow}>
+      <div style={s.avatar} data-testid="avatar">{iniciais(nome, '·')}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div data-testid="perfil-nome" style={{ fontSize: 13.5, fontWeight: 600, color: '#2c2530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {nome || (perfil.estado === 'carregando' ? '—' : 'Sem nome')}
+        </div>
+        <div onClick={verPerfil} style={{ fontSize: 11.5, color: '#8b8391', cursor: 'pointer' }}>Ver perfil ›</div>
+      </div>
+      <div data-testid="sair" onClick={sair} style={{ fontSize: 11.5, color: theme.primary, fontWeight: 600, cursor: 'pointer' }}>
+        Sair
+      </div>
+    </div>
+  );
+
+  const faixaDeErro = erroSync && (
+    <div
+      role="alert"
+      data-testid="erro-sync"
+      style={{
+        background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA',
+        borderRadius: 12, padding: '10px 14px', fontSize: 12.5, marginBottom: 14,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}
+    >
+      <span>{erroSync}</span>
+      <span onClick={() => setErroSync(null)} style={{ fontWeight: 700, cursor: 'pointer' }}>×</span>
+    </div>
+  );
+
+  // 2ª fase: página própria, sem dashboard, menu, meta nem avisos — tudo isso
+  // mede a 1ª fase. Fica o seletor, quem está logado e a faixa de erro.
+  if (fase.chave !== FASE_PADRAO) {
+    const segundaFase = (
+      <SegundaFase
+        theme={theme}
+        s={s}
+        fase={fase}
+        estado={state.segundaFase}
+        setEstado={(p) => updateSlice('segundaFase', p)}
+        gravarResposta={gravarRespostaDiscursiva}
+        sessaoExpirou={encerrarSessao}
+      />
+    );
+
+    // No celular a barra lateral vira uma faixa no topo: seletor, iniciais e
+    // "Sair". O resto dela (o item de menu e a explicação) é dispensável.
+    if (estreita) {
+      return (
+        <div style={{ ...s.app, flexDirection: 'column' }}>
+          <div style={{ flex: 'none', background: '#fff', borderBottom: '1px solid rgba(0,0,0,.06)', padding: '12px 14px', display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+            <SeletorDeFase theme={theme} s={s} fase={fase} onTrocar={trocarFase} compacto />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none', paddingBottom: 4 }}>
+              <div style={{ ...s.avatar, width: 30, height: 30, fontSize: 11 }} data-testid="avatar" title={nome || undefined}>{iniciais(nome, '·')}</div>
+              <div data-testid="sair" onClick={sair} style={{ fontSize: 12, color: theme.primary, fontWeight: 600, cursor: 'pointer' }}>Sair</div>
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 14px 28px' }}>
+            <div style={{ ...s.pageTitle, fontSize: 19 }}>{fase.titulo}</div>
+            <div style={{ ...s.pageSub, marginBottom: 14 }}>{fase.sub}</div>
+            {faixaDeErro}
+            {segundaFase}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={s.app}>
+        <div style={s.sidebar}>
+          <SeletorDeFase theme={theme} s={s} fase={fase} onTrocar={trocarFase} />
+          <div
+            data-testid="nav-discursivas"
+            aria-current="page"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, marginTop: 8,
+              fontSize: 13.5, fontWeight: 600, color: theme.primaryDark, background: theme.primarySoft,
+            }}
+          >
+            <Icon name="pencil" color={theme.primaryDark} size={20} />
+            <span>Questões discursivas</span>
+          </div>
+          <div style={{ fontSize: 12, color: '#8b8391', lineHeight: 1.5, padding: '8px 12px 0' }}>
+            As 4 questões de cada exame, com o padrão de resposta oficial da FGV. A peça não entra.
+          </div>
+          {linhaDoPerfil}
+        </div>
+
+        <div style={s.main}>
+          <div style={s.topbar}>
+            <div>
+              <div style={s.pageTitle}>{fase.titulo}</div>
+              <div style={s.pageSub}>{fase.sub}</div>
+            </div>
+          </div>
+          <div style={s.content}>
+            {faixaDeErro}
+            {segundaFase}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const meta = metaDiaria(state.configuracoes, usuarioTentativas, state.resultados_historico);
   const sequencia = sequenciaAtual(usuarioTentativas, state.resultados_historico);
   const diasProva = diasAteProva(state.configuracoes);
@@ -641,13 +795,7 @@ export default function App() {
   return (
     <div style={s.app}>
       <div style={s.sidebar}>
-        <div style={s.logoRow}>
-          <div style={s.logoMark}><Icon name="scale" color="#ffffff" size={17} /></div>
-          <div>
-            <div style={s.logoText}>ma.</div>
-            <div style={s.logoSub}>questões</div>
-          </div>
-        </div>
+        <SeletorDeFase theme={theme} s={s} fase={fase} onTrocar={trocarFase} />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
           {navItems.map((item) => (
@@ -697,18 +845,7 @@ export default function App() {
           </div>
         )}
 
-        <div style={s.profileRow}>
-          <div style={s.avatar} data-testid="avatar">{iniciais(nome, '·')}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div data-testid="perfil-nome" style={{ fontSize: 13.5, fontWeight: 600, color: '#2c2530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {nome || (perfil.estado === 'carregando' ? '—' : 'Sem nome')}
-            </div>
-            <div onClick={() => goTo('configuracoes')} style={{ fontSize: 11.5, color: '#8b8391', cursor: 'pointer' }}>Ver perfil ›</div>
-          </div>
-          <div data-testid="sair" onClick={sair} style={{ fontSize: 11.5, color: theme.primary, fontWeight: 600, cursor: 'pointer' }}>
-            Sair
-          </div>
-        </div>
+        {linhaDoPerfil}
       </div>
 
       <div style={s.main}>
@@ -792,20 +929,7 @@ export default function App() {
         </div>
 
         <div style={s.content}>
-          {erroSync && (
-            <div
-              role="alert"
-              data-testid="erro-sync"
-              style={{
-                background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA',
-                borderRadius: 12, padding: '10px 14px', fontSize: 12.5, marginBottom: 14,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-              }}
-            >
-              <span>{erroSync}</span>
-              <span onClick={() => setErroSync(null)} style={{ fontWeight: 700, cursor: 'pointer' }}>×</span>
-            </div>
-          )}
+          {faixaDeErro}
           {state.screen === 'dashboard' && (
             <Dashboard {...screenProps} dash={state.dashboard} setDash={(p) => updateSlice('dashboard', p)} acervo={acervo} />
           )}
