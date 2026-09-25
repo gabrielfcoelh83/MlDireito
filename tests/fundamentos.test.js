@@ -10,7 +10,7 @@ import {
   extrairCitacoes, esperadosDoGabarito, compararFundamentos, conferirQuestao, formatarArtigo,
   caminhosDoGabarito,
 } from '../src/lib/fundamentos.js';
-import { agruparPorExame, formatarValor, respostasPreenchidas, mesmoRascunho } from '../src/lib/discursivas.js';
+import { agruparPorExame, formatarValor, respostasPreenchidas, mesmoRascunho, maisRecente } from '../src/lib/discursivas.js';
 
 const falhas = [];
 const exigir = (condicao, mensagem) => {
@@ -86,6 +86,24 @@ exigirChaves('arts. 186 até 188 do CC', ['CC:186', 'CC:187', 'CC:188']);
   exigir(r.atendidos.length === 1, 'intervalo atende o artigo do meio');
 }
 exigirChaves('art. 5º a 10 dias', ['?:5']);
+// Intervalo no meio do encadeamento, não só no primeiro par.
+exigirChaves('arts. 186, 187 a 190 do CC', ['CC:186', 'CC:187', 'CC:188', 'CC:189', 'CC:190']);
+exigirChaves('arts. 186 e 187 a 190 do CC', ['CC:186', 'CC:187', 'CC:188', 'CC:189', 'CC:190']);
+// Intervalo de parágrafos ou incisos é detalhe do artigo, nunca artigo novo.
+exigirChaves('art. 1.228, § 1º a 3º, do CC', ['CC:1228']);
+exigirChaves('art. 5º, §§ 1º a 3º, da CF', ['CF:5']);
+exigirChaves('art. 1.228, §§ 1º até 3º, do CC', ['CC:1228']);
+exigirChaves('art. 5º, incisos I a III, da CF', ['CF:5']);
+{
+  const [c] = extrairCitacoes('art. 1.228, § 1º a 3º, do CC');
+  exigir(c?.detalhe === '§ 1º a 3º', `detalhe do intervalo de parágrafos: "${c?.detalhe}"`);
+}
+// Depois de o diploma fechar o grupo, número seguido de palavra comum não é artigo.
+exigirChaves('art. 186 do CC e 3, conforme a doutrina', ['CC:186']);
+exigirChaves('art. 186 do CC e 2 dos réus', ['CC:186']);
+exigirChaves('art. 186 do CC e 927.', ['CC:186', 'CC:927']);
+exigirChaves('art. 186 do CC e 927, parágrafo único', ['CC:186', 'CC:927']);
+exigirChaves('art. 186 do CC e art. 2 dos réus', ['CC:186', 'CC:2']);
 // Sigla minúscula logo depois da preposição.
 exigirChaves('art. 186 do cc', ['CC:186']);
 exigirChaves('art. 319 do cpc', ['CPC:319']);
@@ -100,10 +118,29 @@ exigirChaves('art. 186, cc', ['?:186']);
 //
 // Lookbehind é SyntaxError no Safari antes do 16.4, e este módulo é
 // importado pelo App: o app inteiro deixaria de carregar.
+// Vale para todo o código que vai para o navegador ou roda na Vercel, não só
+// para este módulo. `.at()` (Safari < 15.4) pelo mesmo motivo.
 {
-  const { readFileSync } = await import('node:fs');
-  const codigo = readFileSync(new URL('../src/lib/fundamentos.js', import.meta.url), 'utf8');
-  exigir(!codigo.includes('(?<'), 'fundamentos.js usa lookbehind');
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const path = await import('node:path');
+  const raiz = new URL('..', import.meta.url).pathname;
+  const arquivos = [];
+  const varrer = (pasta) => {
+    for (const nome of readdirSync(pasta)) {
+      if (nome === 'node_modules') continue;
+      const caminho = path.join(pasta, nome);
+      if (statSync(caminho).isDirectory()) varrer(caminho);
+      else if (/\.(js|jsx)$/.test(nome)) arquivos.push(caminho);
+    }
+  };
+  varrer(path.join(raiz, 'src'));
+  varrer(path.join(raiz, 'api'));
+  exigir(arquivos.length > 10, `varredura achou só ${arquivos.length} arquivos`);
+  for (const arquivo of arquivos) {
+    const codigo = readFileSync(arquivo, 'utf8');
+    exigir(!codigo.includes('(?<'), `${path.relative(raiz, arquivo)} usa lookbehind (ou grupo nomeado)`);
+    exigir(!/\.at\(\s*-/.test(codigo), `${path.relative(raiz, arquivo)} usa .at(-n)`);
+  }
 }
 
 // ---- Extração: o que NÃO é citação --------------------------------------
@@ -323,6 +360,15 @@ exigir(respostasPreenchidas(undefined) === 0, 'sem respostas');
 exigir(mesmoRascunho({ A: 'x' }, { A: 'x', B: '' }), 'item ausente no rascunho vale como vazio');
 exigir(!mesmoRascunho({ A: 'x', B: 'novo' }, { A: 'x', B: '' }), 'edição feita depois do envio não é o mesmo rascunho');
 exigir(!mesmoRascunho({ A: 'xy' }, { A: 'x' }), 'texto alterado não é o mesmo rascunho');
+
+{
+  const velha = { id: 1, criada_em: '2026-09-25T10:00:00Z' };
+  const nova = { id: 2, criada_em: '2026-09-25T10:05:00Z' };
+  exigir(maisRecente(velha, nova) === nova && maisRecente(nova, velha) === nova, 'mais recente pela data');
+  exigir(maisRecente(null, nova) === nova && maisRecente(velha, undefined) === velha, 'uma só');
+  exigir(maisRecente(null, undefined) === null, 'nenhuma');
+  exigir(maisRecente({ id: 3, criada_em: 'x' }, { id: 4, criada_em: 'x' }).id === 4, 'empate: o id maior');
+}
 
 if (falhas.length > 0) {
   console.error(`\n❌ ${falhas.length} problema(s):`);

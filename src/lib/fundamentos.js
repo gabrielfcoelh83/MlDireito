@@ -135,11 +135,14 @@ const RE_NUMERO = /(\d{1,3}(?:\.\d{3})+|\d+)(?:\s*[º°o](?![\p{L}\d]))?(?:\s*-\
 // sigla de diploma — "CC" e "CDC" são letras romanas válidas.
 const RE_DETALHE = new RegExp(
   '(?:(?:e|ou)\\s+)?(?:'
-  + '§{1,2}\\s*\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,)\\s*§?\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]))*'
+  // "§ 1º a 3º", "§§ 1º e 2º": intervalo de parágrafos é detalhe do artigo,
+  // nunca artigo novo — sem isto, "art. 1.228, § 1º a 3º" citava um art. 3.
+  + '§{1,2}\\s*\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*§?\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]))*'
+  + '|par[áa]grafos\\s+\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]))*'
   + '|par[áa]grafo\\s+(?:[úu]nico|\\d+\\s*[º°o]?)'
   + '|p\\.\\s*[úu]\\.'
   + '|caput|in\\s+fine|parte\\s+final|(?:primeira|segunda)\\s+parte'
-  + '|incisos?\\s+[IVXLCDM]+(?:\\s*(?:e|ou|,|a)\\s*[IVXLCDM]+(?![\\p{L}\\d]))*'
+  + '|incisos?\\s+[IVXLCDM]+(?:\\s*(?:e|ou|,|a|at[ée])\\s*[IVXLCDM]+(?![\\p{L}\\d]))*'
   + '|inc\\.\\s*[IVXLCDM]+'
   + '|al[íi]neas?\\s+["“\']?[a-z]["”\']?'
   + '|[IVXLCDM]+'
@@ -165,7 +168,12 @@ const RE_CONTINUACAO_DEPOIS_DO_DIPLOMA = new RegExp(
 const MAX_INTERVALO = 30;
 // Um número só continua o grupo se o que vem depois tem cara de citação.
 // Sem isto, "art. 186 e 10 testemunhas" citaria um art. 10.
-const RE_DEPOIS_DO_NUMERO = /(?:[º°o](?![\p{L}\d])|\s*-\s*[A-Z](?![\p{L}\d])|\s*(?:[,;.:)]|$|§|\(|(?:e|ou|d[oa]s?|n[oa]s?|c\/c|caput|inciso|par[áa]grafo|al[íi]nea)(?![\p{L}\d])))/iuy;
+const RE_DEPOIS_DO_NUMERO = /(?:[º°o](?![\p{L}\d])|\s*-\s*[A-Z](?![\p{L}\d])|\s*(?:[,;.:)]|$|§|\(|(?:a|at[ée])\s+\d|(?:e|ou|d[oa]s?|n[oa]s?|c\/c|caput|inciso|par[áa]grafo|al[íi]nea)(?![\p{L}\d])))/iuy;
+
+// Depois de o diploma fechar o grupo, um número sem "art." só é artigo se o
+// que vem depois é fim de frase, detalhe de artigo, outro diploma ou outro
+// artigo. "art. 186 do CC e 3, conforme…" e "…do CC e 2 dos réus" não são.
+const RE_DEPOIS_DO_NUMERO_POS_DIPLOMA = /(?:\s*[º°o](?![\p{L}\d]))?(?:\s*-\s*[A-Z](?![\p{L}\d]))?(?:\s*(?:[.;:)]|$)|[\s,]*(?:§|incisos?(?![\p{L}\d])|inc\.|caput|par[áa]grafo|[IVXLCDM]+(?![\p{L}\d]))|\s+(?:e|ou|a|at[ée]|c\/c)\s+(?:arts?\.?\s*|artigos?\s*)?\d)/uy;
 
 function lerNumero(texto, pos) {
   RE_NUMERO.lastIndex = pos;
@@ -196,7 +204,7 @@ function lerDetalhes(texto, pos) {
 // O próximo número de um encadeamento, se houver: `{ pos, conector }`.
 // Sem "art." antes, o número só conta se o que vem depois tem cara de
 // citação ("e 10 testemunhas" não é o art. 10).
-function continuacao(texto, pos, re) {
+function continuacao(texto, pos, re, depoisDoDiploma = false) {
   re.lastIndex = pos;
   const cont = re.exec(texto);
   if (!cont) return null;
@@ -204,8 +212,14 @@ function continuacao(texto, pos, re) {
   const proximo = lerNumero(texto, inicioNumero);
   if (!proximo) return null;
   if (!cont[2]) {
-    RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;
-    if (!RE_DEPOIS_DO_NUMERO.test(texto)) return null;
+    if (depoisDoDiploma) {
+      RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.lastIndex = proximo.fim;
+      const ok = RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.test(texto) || diplomaAdiante(texto, proximo.fim);
+      if (!ok) return null;
+    } else {
+      RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;
+      if (!RE_DEPOIS_DO_NUMERO.test(texto)) return null;
+    }
   }
   const conector = cont[1] ? cont[1].toLowerCase().replace(/\s+/g, '') : null;
   return { pos: inicioNumero, conector: conector === 'c.c.' ? 'c/c' : conector };
@@ -222,7 +236,7 @@ function lerGrupoDeArtigos(texto, pos) {
     const { detalhe, fim } = lerDetalhes(texto, numero.fim);
 
     // "arts. 186 a 188": os do meio também foram citados.
-    const anterior = artigos.at(-1);
+    const anterior = artigos[artigos.length - 1];
     if (conector === 'a' || conector === 'até' || conector === 'ate') {
       const de = Number(anterior?.artigo);
       const ate = Number(numero.artigo);
@@ -336,7 +350,8 @@ export function extrairCitacoes(texto) {
       const adiante = diplomaAdiante(fonte, grupo.fim);
       if (adiante) {
         fim = adiante.fim;
-        diploma = adiante.mesmo ? (citacoes.filter((c) => c.tipo === 'artigo').at(-1)?.diploma ?? null) : adiante.id;
+        const artigosAntes = citacoes.filter((c) => c.tipo === 'artigo');
+        diploma = adiante.mesmo ? (artigosAntes[artigosAntes.length - 1]?.diploma ?? null) : adiante.id;
       } else {
         // "…do CC e 179": sem lei própria, é a do grupo de antes.
         diploma = primeiro ? diplomaAtras(fonte, inicio) : herdado;
@@ -353,7 +368,7 @@ export function extrairCitacoes(texto) {
       RE_ART.lastIndex = Math.max(RE_ART.lastIndex, fim);
 
       if (!adiante) break;
-      const cont = continuacao(fonte, fim, RE_CONTINUACAO_DEPOIS_DO_DIPLOMA);
+      const cont = continuacao(fonte, fim, RE_CONTINUACAO_DEPOIS_DO_DIPLOMA, true);
       if (!cont) break;
       conector = cont.conector;
       herdado = diploma;
@@ -414,7 +429,7 @@ export function esperadosDoGabarito(gabarito) {
   citacoes.forEach((c, i) => {
     const anterior = citacoes[i - 1];
     const ouNoTexto = anterior && anterior.fim <= c.inicio && RE_OU_ENTRE.test(fonte.slice(anterior.fim, c.inicio));
-    if (grupos.length > 0 && (c.alternativaDaAnterior || ouNoTexto)) grupos.at(-1).push(c);
+    if (grupos.length > 0 && (c.alternativaDaAnterior || ouNoTexto)) grupos[grupos.length - 1].push(c);
     else grupos.push([c]);
   });
 
