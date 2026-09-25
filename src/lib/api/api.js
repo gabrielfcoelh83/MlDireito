@@ -379,15 +379,3 @@ export async function registrarTentativa({ questaoId, correta, alternativa, temp
 
   return paraFormatoLocal(linha);
 }
-
-// O feedback chega depois da tentativa já gravada, então é PATCH sobre uma
-// linha existente. Precisa do `id` que o POST devolveu — quem chama tem de
-// garantir que ele já voltou do servidor (ver `registroPendente` no App).
-export async function anotarFeedbackTentativa(id, tipo, certeza) {
-  const linha = await req(`/api/tentativas/${id}`, {
-    method: 'PATCH',
-    body: { tipo, certeza },
-  });
-
-  return paraFormatoLocal(linha);
-}
