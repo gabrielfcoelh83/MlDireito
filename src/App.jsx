@@ -428,14 +428,19 @@ export default function App() {
   // Meta e data da prova vão para o servidor (coluna profile_data); o estado
   // local muda na hora para a tela não ficar esperando a rede.
   const atualizarConfig = (partial) => {
-    const configuracoes = { ...state.configuracoes, ...partial };
+    // Vai ao servidor só o que mudou: o user-service mescla o profile_data, e
+    // mandar a meta local junto com uma data nova sobrescreveria a meta gravada
+    // de lá quando o perfil ainda não carregou (aparelho novo, perfil fora do ar).
+    const mudou = {};
+    if ('meta' in partial) mudou.meta = partial.meta;
+    if ('dataProva' in partial) mudou.dataProva = partial.dataProva;
 
     // O `setState` fica com a função pura. Disparar a rede de dentro dele
     // seria efeito colateral num updater — o React pode reexecutá-lo (e em
     // StrictMode reexecuta sempre), o que dobrava cada gravação.
     setState((st) => ({ ...st, configuracoes: { ...st.configuracoes, ...partial } }));
 
-    if (perfil.id == null) return;
+    if (perfil.id == null || Object.keys(mudou).length === 0) return;
 
     const epoch = sessaoEpoch.current;
     const id = perfil.id;
@@ -443,7 +448,7 @@ export default function App() {
     // vez sairia com o token de quem entrou em seguida. Não sai.
     filaDePreferencias.current
       .gravar(
-        { meta: configuracoes.meta, dataProva: configuracoes.dataProva },
+        mudou,
         { continuar: () => sessaoEpoch.current === epoch, extra: { id } },
       )
       .then((resposta) => {
