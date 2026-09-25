@@ -850,7 +850,7 @@ const QUESTAO_DISCURSIVA = {
   ],
 };
 
-async function simularDiscursivas(page, { lista = [], questao = null, falharGravacao = false } = {}) {
+async function simularDiscursivas(page, { lista = [], questao = null, falharGravacao = false, atrasoGravacaoMs = 0 } = {}) {
   const gravadas = [];
   const enviadas = [];
 
@@ -862,6 +862,7 @@ async function simularDiscursivas(page, { lista = [], questao = null, falharGrav
       if (pedido.method() === 'POST') {
         const corpo = pedido.postDataJSON();
         enviadas.push(corpo);
+        if (atrasoGravacaoMs) await new Promise((r) => setTimeout(r, atrasoGravacaoMs));
         if (falharGravacao) return rota.fulfill({ status: 500, json: { error: 'banco fora do ar' } });
         const linha = { id: gravadas.length + 1, ...corpo, criada_em: new Date().toISOString() };
         gravadas.unshift(linha);
@@ -975,6 +976,49 @@ test.describe('2ª fase: questões discursivas', () => {
 
     await page.reload();
     await expect(page.locator('[data-testid="resposta-A"]')).toHaveValue('Art. 1.659, I, do CC.');
+  });
+
+  test('o rascunho é da conta: sair e entrar de novo o traz de volta', async ({ page }) => {
+    await simularDiscursivas(page, { lista: [RESUMO_DISCURSIVA], questao: QUESTAO_DISCURSIVA });
+    await entrar(page);
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await page.fill('[data-testid="resposta-A"]', 'Rascunho que sobrevive ao sair');
+
+    await page.click('[data-testid="sair"]');
+    await page.fill('input[type="email"]', EMAIL);
+    await page.fill('input[type="password"]', SENHA);
+    await page.click('button[type="submit"]');
+
+    // "Sair" zera a interface (a fase volta à 1ª), não o rascunho.
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    await expect(page.locator(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`)).toContainText('Rascunho');
+    await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await expect(page.locator('[data-testid="resposta-A"]')).toHaveValue('Rascunho que sobrevive ao sair');
+  });
+
+  test('sair da questão com a gravação no ar não deixa o rascunho para trás', async ({ page }) => {
+    const { enviadas } = await simularDiscursivas(page, {
+      lista: [RESUMO_DISCURSIVA], questao: QUESTAO_DISCURSIVA, atrasoGravacaoMs: 1500,
+    });
+    await entrar(page);
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await page.fill('[data-testid="resposta-A"]', 'Art. 1.659, I, do CC.');
+    await page.click('[data-testid="corrigir"]');
+    await page.click('[data-testid="voltar-lista"]');
+
+    // Na lista, enquanto o POST não volta, o rascunho ainda existe…
+    const item = page.locator(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await expect(item).toContainText('Rascunho');
+    // …e sai quando a resposta é salva, com a questão já fechada.
+    await expect(item).not.toContainText('Rascunho', { timeout: 5000 });
+    expect(enviadas).toHaveLength(1);
+    const naChave = await page.evaluate(() => {
+      const chave = Object.keys(localStorage).find((k) => k.startsWith('ma-questoes-conta-v1:'));
+      return JSON.parse(localStorage.getItem(chave) || '{}').segundaFase?.rascunhos || {};
+    });
+    expect(naChave).toEqual({});
   });
 
   test('com o acervo semeado, a resposta vai para o servidor e volta ao reabrir', async ({ page }) => {

@@ -130,8 +130,14 @@ de resposta do 36º ao 45º Exame.
   "artigo 1.228 do Código Civil", "art. 186 do CC c/c art. 927 do mesmo
   diploma") e súmulas ("Súmula 537 do STJ", "Súmula Vinculante 25"). 1.659 e
   1659 são o mesmo artigo; lei pelo número vira a sigla quando existe (8.078
-  → CDC, 13.709 → LGPD). Número sem "art."/"artigo"/"Súmula" antes não é
-  citação. Siglas só em maiúsculas: "cf." não é Constituição.
+  → CDC, 13.709 → LGPD). Encadeamentos: "art. 186 C/C 927 do CC", "artigo
+  496 do Código Civil e 179 do CC" e intervalos ("arts. 186 a 188", que
+  conta o 187). Número sem "art."/"artigo"/"Súmula" antes não é citação.
+  Siglas em maiúsculas, ou minúsculas logo depois de "do/da/no/na" ("do
+  cc"): solto no texto, "cf." não é Constituição.
+- Sem lookbehind nas expressões regulares: é SyntaxError no Safari antes do
+  16.4, e o módulo é importado pelo App — o app inteiro não carregaria. Um
+  teste confere.
 - A comparação é por **diploma + artigo**; parágrafo, inciso e alínea são
   detalhe exibido. Artigo citado sem a lei atende, com o aviso "diga de qual
   lei é o artigo"; artigo de outra lei não atende.
@@ -178,8 +184,8 @@ tipos é o que fazia uma gravação que falhou divergir em silêncio do servidor
 
 | Tipo | Onde fica | Persistência | Conteúdo |
 |---|---|---|---|
-| Interface | `state` (`DEFAULT_STATE`) | localStorage (`ma-questoes-state-v1`) | tema, fase, tela atual, filtros de cada tela, quiz em andamento, questão discursiva aberta e rascunhos, favoritos, anotações, histórico de simulado |
-| Conta | cópia de três fatias de `state` | localStorage (`ma-questoes-conta-v1:<id>`), uma chave por conta | favoritos, anotações (só as notas) e histórico de simulado — ver "Dados da conta" |
+| Interface | `state` (`DEFAULT_STATE`) | localStorage (`ma-questoes-state-v1`) | tema, fase, tela atual, filtros de cada tela, quiz em andamento, questão discursiva aberta, favoritos, anotações, histórico de simulado, rascunhos discursivos |
+| Conta | cópia de quatro fatias de `state` | localStorage (`ma-questoes-conta-v1:<id>`), uma chave por conta | favoritos, anotações (só as notas), histórico de simulado e rascunhos discursivos (`segundaFase` sem a questão aberta) — ver "Dados da conta" |
 | Servidor | `useState` próprios | nenhuma — recarregados a cada sessão | `acervo`, `usuarioTentativas`, `perfil`; na `SegundaFase`, a lista, a questão aberta e a última resposta, recarregadas a cada visita |
 | Sessão | `useState` próprio | deriva do token salvo (`ma-questoes-token-v1`) | `sessao` (`'ativa'` / `'ausente'`) |
 | Aviso | `useState` próprio | nenhuma | `erroSync`, a faixa de erro do topo |
@@ -224,16 +230,19 @@ Regras que o código já garante:
 - **Logout** (`sair`): apaga o token, encerra a sessão (ver abaixo) e zera o
   estado da interface — mas não os dados da conta, que voltam quando a mesma
   pessoa entrar de novo.
-- **Fase e rascunhos são da interface**, como `screen`: não vão para a chave
-  da conta, não passam entre abas, e o "Sair" os zera. O rascunho de uma
-  questão discursiva sai do estado quando a resposta é salva no servidor;
-  enquanto a gravação falhar, ele fica, e recarregar a aba o traz de volta.
+- **A fase é da interface**, como `screen`: não passa entre abas, e o "Sair"
+  a zera. **Os rascunhos discursivos são da conta** (ver "Dados da
+  conta"). O rascunho sai quando a resposta é salva no servidor — por
+  `gravarRespostaDiscursiva` no `App`, que funciona mesmo se a pessoa já
+  saiu da questão, e só se o rascunho ainda for o texto enviado. Enquanto a
+  gravação falhar, ele fica.
 - **Fatias por tela**: cada tela recebe a sua fatia e um setter montado com
   `updateSlice(chave, parcial)`, que aceita objeto (merge) ou função.
 
 ### Dados da conta
 
-Favoritos, anotações e histórico de simulado não têm rota na API. Além de
+Favoritos, anotações, histórico de simulado e rascunhos discursivos
+(`segundaFase.rascunhos`, texto ainda não conferido) não têm rota na API. Além de
 viverem em `state`, ficam numa chave por conta, gravada pelo mesmo efeito que
 grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
 
@@ -246,8 +255,9 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
   duas abas abertas, a desatualizada regrava o estado da interface a cada
   troca de tela; a chave só é gravada quando os dados da conta mudam
   (`ultimaGravacao`), então é ela que tem a versão mais nova.
-- **Pasta aberta e nota selecionada não vão para a chave** (`CAMPOS_DA_TELA`):
-  são da tela, mudam só de clicar, e fariam uma aba sobrescrever a outra.
+- **Pasta aberta, nota selecionada e questão discursiva aberta não vão para
+  a chave** (`CAMPOS_DA_TELA`): são da tela, mudam só de clicar, e fariam uma
+  aba sobrescrever a outra.
 - **Abas abertas ao mesmo tempo** se acompanham pelo evento `storage`, que
   o navegador dispara nas outras abas quando uma grava no localStorage. Os
   dados da conta gravados por uma aba entram nas outras da mesma conta na
@@ -464,8 +474,9 @@ mostrou um dia a menos no Brasil com a CI verde.
     sempre à vista e espreme o conteúdo. Só a página da 2ª fase se adapta a
     tela estreita. O seletor de fase funciona nas duas (é `<select>` nativo).
 13. **Rascunho discursivo só neste navegador** — o texto ainda não conferido
-    fica no estado da interface: não acompanha a pessoa para outro aparelho
-    e some no "Sair". O que foi conferido e salvo está no servidor.
+    fica na chave da conta: sobrevive ao "Sair" e passa entre abas, mas não
+    acompanha a pessoa para outro aparelho. O que foi conferido e salvo está
+    no servidor.
 14. **Conferência de fundamentos é leniente com artigo sem lei** — no padrão
     de resposta, "no Art. 6º" sem o diploma (44º Exame, questão 4, item A)
     fica sem lei, e então qualquer "art. 6º" o atende. Na resposta, artigo

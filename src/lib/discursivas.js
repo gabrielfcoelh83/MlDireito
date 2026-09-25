@@ -28,6 +28,15 @@ export function agruparPorExame(lista) {
     }));
 }
 
+/**
+ * O rascunho ainda é o texto que foi enviado? Item ausente vale como vazio:
+ * o envio leva todos os itens, o rascunho só os que a pessoa tocou.
+ */
+export function mesmoRascunho(rascunho, respostas) {
+  const letras = new Set([...Object.keys(rascunho || {}), ...Object.keys(respostas || {})]);
+  return [...letras].every((l) => (rascunho?.[l] || '') === (respostas?.[l] || ''));
+}
+
 /** Quantos itens têm algum texto escrito. */
 export function respostasPreenchidas(respostas) {
   return Object.values(respostas || {}).filter((t) => typeof t === 'string' && t.trim() !== '').length;

@@ -19,6 +19,7 @@ import {
   buscarPerfil, salvarPerfil, salvarRespostaDiscursiva,
 } from './lib/api/api';
 import SeletorDeFase from './components/ui/SeletorDeFase';
+import { mesmoRascunho } from './lib/discursivas';
 
 import Login from './screens/Login';
 import Dashboard from './screens/Dashboard';
@@ -45,10 +46,11 @@ import SegundaFase from './screens/SegundaFase';
 // ficam guardados por conta (`salvarDadosDaConta`), e é de lá que voltam
 // quando a mesma pessoa entra de novo.
 //
-// `fase` e `segundaFase` são da interface, como `screen`: qual prova está na
-// tela, a questão discursiva aberta e os rascunhos ainda não conferidos. As
-// respostas conferidas vão para o servidor; o rascunho fica neste navegador
-// até ser conferido e sai junto com o estado no "Sair".
+// `fase` e `segundaFase.questaoId` são da interface, como `screen`: qual prova
+// e qual questão discursiva estão na tela. Os rascunhos ainda não conferidos
+// (`segundaFase.rascunhos`) são da conta, como as anotações: vão para a chave
+// dela, sobrevivem ao "Sair" e passam entre abas. A resposta conferida vai
+// para o servidor, e aí o rascunho sai.
 const DEFAULT_STATE = {
   __usuario: null,
   theme: 'rosa',
@@ -397,11 +399,24 @@ export default function App() {
   // salva, ou `null` se a sessão acabou com o POST no ar (a tela não mostra
   // nada para quem entrar depois). Outro erro sobe para a tela, que o mostra
   // junto da própria resposta — a faixa do topo ficaria longe dela.
+  //
+  // O rascunho sai daqui, e não da tela: quem volta à lista com o POST no ar
+  // desmonta a questão, e a resposta era salva com o rascunho ficando para
+  // trás. Só sai se ainda for o texto enviado — senão é edição nova.
   const gravarRespostaDiscursiva = async (resposta) => {
     const epoch = sessaoEpoch.current;
     try {
       const salva = await salvarRespostaDiscursiva(resposta);
-      return sessaoEpoch.current === epoch ? salva : null;
+      if (sessaoEpoch.current !== epoch) return null;
+      const id = String(resposta.questaoId);
+      setState((st) => {
+        const rascunhos = st.segundaFase?.rascunhos || {};
+        if (!(id in rascunhos) || !mesmoRascunho(rascunhos[id], resposta.respostas)) return st;
+        const resto = { ...rascunhos };
+        delete resto[id];
+        return { ...st, segundaFase: { ...st.segundaFase, rascunhos: resto } };
+      });
+      return salva;
     } catch (err) {
       if (sessaoEpoch.current !== epoch) return null;
       if (err.status === 401) { encerrarSessao(); return null; }

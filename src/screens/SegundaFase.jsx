@@ -9,9 +9,10 @@ import { listarDiscursivas, buscarDiscursiva, listarRespostasDiscursivas } from 
 // simples": escolher a questão, responder, conferir.
 //
 // O acervo e as respostas salvas são do servidor e ficam em estado local
-// desta tela, recarregados a cada visita. Do estado da interface (`estado`,
-// `state.segundaFase` no App) vêm só a questão aberta e os rascunhos ainda não
-// conferidos — o que se perderia ao recarregar a aba no meio de uma resposta.
+// desta tela, recarregados a cada visita. De `state.segundaFase` no App
+// (`estado`) vêm a questão aberta — da tela — e os rascunhos ainda não
+// conferidos, que são da conta: vão para a chave dela no localStorage,
+// sobrevivem ao "Sair" e passam entre abas (ver `FATIAS_DA_CONTA`).
 
 const COR_TEXTO = '#2c2530';
 
@@ -338,11 +339,11 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
     setPendente({ respostas, salvando: true, erro: null });
     try {
       const salva = await gravarResposta({ questaoId: questao.id, respostas, fundamentos: { citados, esperados } });
-      // null: a sessão acabou com o POST no ar (o App já cuidou disso).
+      // null: a sessão acabou com o POST no ar (o App já cuidou disso). O
+      // rascunho quem apaga é o App, que segue montado se a pessoa sair daqui.
       if (!salva || !montada.current) return;
       setUltima(salva);
       setPendente(null);
-      setRascunho(undefined);
     } catch (err) {
       if (montada.current) setPendente({ respostas, salvando: false, erro: mensagemDeErro(err) });
     }
@@ -499,7 +500,8 @@ export default function SegundaFase({ theme, s, fase, estado, setEstado, gravarR
   const abrir = (id) => setEstado({ questaoId: id });
   const voltar = () => setEstado({ questaoId: null });
 
-  // `undefined` apaga o rascunho: a resposta foi conferida e salva.
+  // `undefined` apaga o rascunho ("Descartar"). Depois de salvar, quem apaga é
+  // o App (`gravarRespostaDiscursiva`).
   const setRascunho = (id) => (valor) => setEstado((atual) => {
     const proximos = { ...(atual?.rascunhos || {}) };
     if (valor === undefined) delete proximos[String(id)];
