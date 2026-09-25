@@ -177,7 +177,11 @@ const RE_DEPOIS_DO_NUMERO = /(?:[º°o](?![\p{L}\d])|\s*-\s*[A-Z](?![\p{L}\d])|\
 // artigo. "art. 186 do CC e 3, conforme…" e "…do CC e 2 dos réus" não são.
 const RE_DEPOIS_DO_NUMERO_POS_DIPLOMA = /(?:\s*[º°o](?![\p{L}\d]))?(?:\s*-\s*[A-Z](?![\p{L}\d]))?(?:\s*(?:[.;:)]|$)|[\s,]*(?:§|incisos?(?![\p{L}\d])|inc\.|caput|par[áa]grafo|[IVXLCDM]+(?![\p{L}\d]))|\s+(?:e|ou|a|at[ée]|c\/c)\s+(?:arts?\.?\s*|artigos?\s*)?\d)/uy;
 
-const RE_VIRGULA_OU_PARENTESE = /(?:\s*[º°o](?![\p{L}\d]))?\s*[,(]/uy;
+const RE_VIRGULA = /(?:\s*[º°o](?![\p{L}\d]))?\s*,/uy;
+const RE_PARENTESE = /(?:\s*[º°o](?![\p{L}\d]))?\s*\(/uy;
+// Número por extenso entre parênteses é quantidade, não artigo: "15 (quinze)
+// dias", "50 (cinquenta) mil reais".
+const RE_POR_EXTENSO = /(?:\s*[º°o](?![\p{L}\d]))?\s*\(\s*(?:um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzent|trezent|quatrocent|quinhent|seiscent|setecent|oitocent|novecent|mil)/iuy;
 
 function lerNumero(texto, pos) {
   RE_NUMERO.lastIndex = pos;
@@ -218,14 +222,21 @@ function continuacao(texto, pos, re, depoisDoDiploma = false) {
   if (!cont[2]) {
     if (depoisDoDiploma) {
       RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.lastIndex = proximo.fim;
-      // Vírgula ou parêntese logo depois ("…do CC e 927, sendo devida…",
-      // "…e 927 (responsabilidade)") só se o número tem cara de artigo: dois
-      // dígitos ou mais, ou sufixo. "…do CC e 3, conforme a doutrina" não.
-      RE_VIRGULA_OU_PARENTESE.lastIndex = proximo.fim;
-      const numeroDeArtigo = proximo.artigo.split('-')[0].length >= 2 || proximo.artigo.includes('-');
+      // Vírgula ou parêntese logo depois só se o número tem cara de artigo.
+      // Vírgula: três dígitos ou mais, ou sufixo ("…do CC e 927, sendo
+      // devida…"); "…e 10, conforme a doutrina" não. Parêntese: dois dígitos
+      // ou mais ("…e 927 (responsabilidade)"), mas não número por extenso
+      // ("…do CPC e 15 (quinze) dias").
+      const digitos = proximo.artigo.split('-')[0].length;
+      const temSufixo = proximo.artigo.includes('-');
+      RE_VIRGULA.lastIndex = proximo.fim;
+      RE_PARENTESE.lastIndex = proximo.fim;
+      RE_POR_EXTENSO.lastIndex = proximo.fim;
+      const porVirgula = (digitos >= 3 || temSufixo) && RE_VIRGULA.test(texto);
+      const porParentese = (digitos >= 2 || temSufixo) && RE_PARENTESE.test(texto) && !RE_POR_EXTENSO.test(texto);
       const ok = RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.test(texto)
         || diplomaAdiante(texto, proximo.fim)
-        || (numeroDeArtigo && RE_VIRGULA_OU_PARENTESE.test(texto));
+        || porVirgula || porParentese;
       if (!ok) return null;
     } else {
       RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;

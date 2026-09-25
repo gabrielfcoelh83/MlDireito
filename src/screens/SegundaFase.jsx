@@ -408,7 +408,7 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
         )}
       </div>
 
-      {erroDasRespostas && (
+      {erroDasRespostas && !ultimaDoServidor && (
         <div role="status" style={{ marginTop: 12, background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E', borderRadius: 12, padding: '10px 14px', fontSize: 12.5 }}>
           Sua última resposta a esta questão não carregou ({erroDasRespostas}). O que você responder agora é salvo normalmente.
         </div>

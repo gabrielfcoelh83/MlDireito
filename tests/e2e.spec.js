@@ -1072,8 +1072,13 @@ test.describe('2ª fase: questões discursivas', () => {
 
     await page.click('[data-testid="responder-de-novo"]');
     await page.fill('[data-testid="resposta-A"]', 'Segunda, que vou descartar.');
-    // Espera a busca disparada pelo salvamento assentar antes de contar.
-    await page.waitForTimeout(500);
+    // Espera a busca disparada pelo salvamento assentar antes de contar: a
+    // contagem tem de ficar parada entre duas leituras.
+    await expect.poll(async () => {
+      const agora = consultas.respostas;
+      await page.waitForTimeout(250);
+      return consultas.respostas === agora;
+    }, { timeout: 10000 }).toBe(true);
     const antes = consultas.respostas;
     await page.click('button:has-text("Descartar e ver a última correção")');
 

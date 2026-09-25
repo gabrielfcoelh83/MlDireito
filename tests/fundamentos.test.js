@@ -111,6 +111,10 @@ exigirChaves('art. 186 do CC e 927 (responsabilidade)', ['CC:186', 'CC:927']);
 exigirChaves('art. 1.228 do CC e 1.240-A, quanto à usucapião', ['CC:1228', 'CC:1240-A']);
 exigirChaves('art. 186 do CC e 3, conforme a doutrina', ['CC:186']);
 exigirChaves('art. 186 do CC e 3 (três) réus', ['CC:186']);
+exigirChaves('art. 523 do CPC e 15 (quinze) dias', ['CPC:523']);
+exigirChaves('art. 186 do CC e 50 (cinquenta) mil reais', ['CC:186']);
+exigirChaves('art. 186 do CC e 10, conforme a doutrina', ['CC:186']);
+exigirChaves('art. 186 do CC e 927, sendo devida a indenização', ['CC:186', 'CC:927']);
 // O "1" de "1.229" não é um § 1º.
 {
   const cs = extrairCitacoes('art. 1.228, § 1º a 3º e 1.229 do CC');
