@@ -996,6 +996,7 @@ export default function App() {
               {...screenProps}
               disc={state.disciplinas}
               setDisc={(p) => updateSlice('disciplinas', p)}
+              simularDisciplina={(nome) => setState((st) => ({ ...st, screen: 'simulados', simulados: { ...st.simulados, preDisciplina: nome } }))}
             />
           )}
           {state.screen === 'anotacoes' && (

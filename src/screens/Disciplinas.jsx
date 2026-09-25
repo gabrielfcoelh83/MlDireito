@@ -18,8 +18,14 @@ const STATUS = {
   novo: { label: 'Não iniciada', color: '#5c5462', bg: '#F3F4F6' },
 };
 
-export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas, usuarioTentativas, praticarDisciplina, revisarQuestoes }) {
+// Botões do card no layout LEGJUR: "Iniciar Simulado" abre o formulário do
+// simulado com a matéria já escolhida; "Estudar" abre os temas dela, onde
+// fica o "Praticar" do quiz. Questão ainda sem disciplina forma o card "Sem
+// classificação", que não tem simulado (o filtro do simulado é por
+// disciplina) — ali o botão principal é o quiz.
+export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas, usuarioTentativas, praticarDisciplina, revisarQuestoes, simularDisciplina, go }) {
   const lista = disciplinas || [];
+  const simular = (nome) => (simularDisciplina ? simularDisciplina(nome) : go && go('simulados'));
   const questoes = data.QUESTOES || [];
   const aberta = lista.find((d) => d.nome === disc.openNome) || null;
 
@@ -72,16 +78,18 @@ export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas
 
               <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
                 <button
-                  onClick={() => praticarDisciplina(d.nome)}
+                  data-testid={d.classificada === false ? 'praticar-disciplina' : 'simular-disciplina'}
+                  onClick={() => (d.classificada === false ? praticarDisciplina(d.nome) : simular(d.nome))}
                   style={{ flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
                 >
-                  <Icon name="play" color="#fff" size={12} /> Praticar
+                  <Icon name="play" color="#fff" size={12} /> {d.classificada === false ? 'Praticar' : 'Iniciar Simulado'}
                 </button>
                 <button
+                  data-testid="ver-temas"
                   onClick={() => setDisc({ openNome: d.nome })}
                   style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
                 >
-                  Ver temas
+                  Estudar
                 </button>
               </div>
             </div>
@@ -111,9 +119,20 @@ export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas
             {aberta.pct != null ? ` · ${aberta.pct}% de acerto` : ''}
           </div>
         </div>
-        <button style={s.btnPrimary} onClick={() => praticarDisciplina(aberta.nome)}>
-          <Icon name="play" color="#fff" size={13} /> Praticar {aberta.nome.split(' ').slice(-1)[0]}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {aberta.classificada !== false && (
+            <button
+              data-testid="simular-disciplina-aberta"
+              style={{ ...s.btnOutline, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+              onClick={() => simular(aberta.nome)}
+            >
+              <Icon name="graduation-cap" color={theme.primary} size={14} /> Iniciar Simulado
+            </button>
+          )}
+          <button style={s.btnPrimary} onClick={() => praticarDisciplina(aberta.nome)}>
+            <Icon name="play" color="#fff" size={13} /> Praticar {aberta.nome.split(' ').slice(-1)[0]}
+          </button>
+        </div>
       </div>
 
       <div style={{ ...s.progressTrack, marginTop: 16 }}>

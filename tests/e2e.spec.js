@@ -112,7 +112,7 @@ test.describe('MA Questões E2E', () => {
     await page.selectOption('[data-testid="qtd-questoes"]', '10');
 
     // 4. Iniciar (botão de confirmação do config)
-    await page.click('button:has-text("Iniciar Simulado")');
+    await page.click('[data-testid="iniciar-simulado"]');
     await page.waitForTimeout(500);
 
     // 5. Cronômetro visível na barra inferior
@@ -130,9 +130,17 @@ test.describe('MA Questões E2E', () => {
     // 7. Contador de respondidas na barra inferior
     await expect(page.locator(`text=${questoes}/${questoes} respondidas`)).toBeVisible();
 
+    // A origem é a procedência real do acervo; o rótulo antigo montado à mão
+    // virava "PROVA-FGV-BR/undefined" com questão sem ano.
+    await expect(page.locator('[data-testid="sim-q-0"] [data-testid="origem-da-questao"]')).not.toContainText(/undefined|null/);
+
     // 8. Finalizar → tela de resultado
     await page.click('[data-testid="finalizar-simulado"]');
     await expect(page.locator('text=Nota final').first()).toBeVisible();
+
+    // 8b. Revisão questão a questão, com gabarito
+    await expect(page.locator('[data-testid^="revisao-q-"]')).toHaveCount(questoes);
+    await expect(page.locator('[data-testid="revisao-q-0"]')).toContainText('Gabarito');
 
     // 9. Histórico persistido no localStorage
     const storage = await page.evaluate(() => JSON.parse(localStorage.getItem('ma-questoes-state-v1') || '{}'));
@@ -673,6 +681,68 @@ test.describe('Foco do dia', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Simulado por matéria (Disciplinas → "Vamos começar!")
+// ---------------------------------------------------------------------------
+
+test.describe('Simulado por matéria', () => {
+  // Mesmo motivo do "Foco do dia": o seed não tem disciplina, e classificá-lo
+  // mudaria o agrupamento das fontes para a suíte inteira.
+  const ACERVO = [1, 2, 3].map((n) => ({
+    id: 9100 + n,
+    exame: 98,
+    tipo_prova: 1,
+    numero: n,
+    banca: 'FGV',
+    ano: null,
+    enunciado: `Questão ${n} de direito penal, montada para o teste do simulado por matéria.`,
+    alternativas: [`p${n} A`, `p${n} B`, `p${n} C`, `p${n} D`],
+    gabarito: 2,
+    anulada: false,
+    disciplina: 'Direito Penal',
+    tema: 'Crimes contra a pessoa',
+    explicacao: 'Explicação de teste.',
+    explicacao_fonte: 'ia',
+    revisada: false,
+  }));
+
+  test('"Iniciar Simulado" em Disciplinas abre o formulário com a matéria escolhida', async ({ page }) => {
+    await page.route('**/api/questoes*', (rota) =>
+      rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ACERVO) }));
+
+    await entrar(page);
+    await page.click('[data-testid="nav-disciplinas"]');
+    await page.click('[data-testid="simular-disciplina"]');
+
+    await expect(page.locator('text=Vamos começar!')).toBeVisible();
+    await expect(page.locator('[data-testid="disciplina-simulado"]')).toHaveValue('Direito Penal');
+    // Pediu 10 (o padrão), a matéria tem 3: a tela avisa em vez de abrir 3 calada.
+    await expect(page.locator('[data-testid="aviso-quantidade"]')).toContainText('3 questões');
+
+    await page.click('[data-testid="iniciar-simulado"]');
+    await expect(page.locator('[data-testid^="sim-q-"]')).toHaveCount(3);
+    // Sem feedback durante a prova: marcar não mostra gabarito.
+    await page.click('[data-testid="sim-q-0"] [data-testid="alt-0"]');
+    await expect(page.locator('[data-testid^="revisao-q-"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="sim-q-0"] [data-testid="alt-0"]')).toHaveAttribute('aria-checked', 'true');
+
+    // Finaliza sem mandar nada: responder aqui gravaria tentativa de questão
+    // que só existe nesta resposta simulada. Desmarcar não existe, então
+    // recomeça sem responder.
+    await page.reload();
+    await page.click('[data-testid="nav-simulados"]');
+    // A pré-seleção vale para uma abertura: voltar a Simulados cai no hub.
+    await expect(page.locator('[data-testid="hero-simulado-geral"]')).toBeVisible();
+    await page.click('[data-testid="simular-materia"]');
+    await page.click('[data-testid="iniciar-simulado"]');
+    await page.click('[data-testid="finalizar-simulado"]');
+
+    await expect(page.locator('[data-testid="nota-final"]')).toHaveText('0%');
+    await expect(page.locator('[data-testid="revisao-q-0"]')).toContainText('Em branco');
+    await expect(page.locator('[data-testid="revisao-q-0"] [data-testid="explicacao-nao-revisada"]')).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Todas as telas abrem
 // ---------------------------------------------------------------------------
 //
@@ -724,7 +794,7 @@ test.describe('Todas as telas', () => {
     await entrar(page);
 
     await page.click('[data-testid="nav-disciplinas"]');
-    const verTemas = page.locator('button:has-text("Ver temas")').first();
+    const verTemas = page.locator('[data-testid="ver-temas"]').first();
     if (await verTemas.isVisible()) {
       await verTemas.click();
       await expect(page.locator('text=Temas')).toBeVisible();
