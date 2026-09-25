@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../lib/icons';
 import { conferirQuestao } from '../lib/fundamentos';
-import { agruparPorExame, formatarValor, respostasPreenchidas } from '../lib/discursivas';
+import { agruparPorExame, formatarValor, respostasPreenchidas, maisRecente } from '../lib/discursivas';
 import { listarDiscursivas, buscarDiscursiva, listarRespostasDiscursivas } from '../lib/api/api';
 
 // A 2ª fase: questões discursivas de uma área, com o padrão de resposta da
@@ -252,9 +252,12 @@ function formatarData(iso) {
   return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gravarResposta, sessaoExpirou }) {
+function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gravarResposta, salvaNaSessao, sessaoExpirou }) {
   const [carga, setCarga] = useState({ estado: 'carregando', questao: null, erro: null });
-  const [ultima, setUltima] = useState(null);
+  const [ultimaDoServidor, setUltimaDoServidor] = useState(null);
+  // A carga pode ter saído antes de um POST desta sessão terminar (a pessoa
+  // reabriu a questão com a gravação no ar): vale a mais recente das duas.
+  const ultima = maisRecente(ultimaDoServidor, salvaNaSessao);
   const [erroDasRespostas, setErroDasRespostas] = useState(null);
   const [recarga, setRecarga] = useState(0);
   // O que foi conferido e ainda não está confirmado no servidor: salvando,
@@ -289,15 +292,35 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
         // não existe.
         if (respostas.status === 'rejected') {
           setErroDasRespostas(mensagemDeErro(respostas.reason));
-          setUltima(null);
+          setUltimaDoServidor(null);
         } else {
-          setUltima(respostas.value[0] || null);
+          setUltimaDoServidor(respostas.value[0] || null);
         }
         setCarga({ estado: 'pronto', questao: questao.value, erro: null });
       });
 
     return () => { cancelado = true; };
   }, [questaoId, recarga, sessaoExpirou]);
+
+  // O rascunho sumiu: a resposta foi salva — aqui, ou noutra aba, que apagou
+  // o rascunho da chave da conta. Nesse segundo caso esta aba não sabe o que
+  // foi salvo; busca de novo, sem esqueleto, só a última resposta.
+  const tinhaRascunho = useRef(rascunho !== undefined);
+  useEffect(() => {
+    const tinha = tinhaRascunho.current;
+    tinhaRascunho.current = rascunho !== undefined;
+    if (!tinha || rascunho !== undefined) return undefined;
+
+    let cancelado = false;
+    listarRespostasDiscursivas(questaoId)
+      .then((respostas) => {
+        if (!cancelado) setUltimaDoServidor((atual) => maisRecente(atual, respostas[0] || null));
+      })
+      .catch((err) => {
+        if (!cancelado && err.status === 401) sessaoExpirou();
+      });
+    return () => { cancelado = true; };
+  }, [rascunho, questaoId, sessaoExpirou]);
 
   const cabecalho = (
     <button
@@ -340,9 +363,9 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
     try {
       const salva = await gravarResposta({ questaoId: questao.id, respostas, fundamentos: { citados, esperados } });
       // null: a sessão acabou com o POST no ar (o App já cuidou disso). O
-      // rascunho quem apaga é o App, que segue montado se a pessoa sair daqui.
+      // rascunho quem apaga é o App, que segue montado se a pessoa sair daqui,
+      // e a resposta salva chega por `salvaNaSessao`.
       if (!salva || !montada.current) return;
-      setUltima(salva);
       setPendente(null);
     } catch (err) {
       if (montada.current) setPendente({ respostas, salvando: false, erro: mensagemDeErro(err) });
@@ -493,7 +516,7 @@ function EstadoDaGravacao({ s, pendente, ultima, tentarDeNovo }) {
 
 // ---------------------------------------------------------------------------
 
-export default function SegundaFase({ theme, s, fase, estado, setEstado, gravarResposta, sessaoExpirou }) {
+export default function SegundaFase({ theme, s, fase, estado, setEstado, gravarResposta, salvasNaSessao, sessaoExpirou }) {
   const questaoId = estado?.questaoId ?? null;
   const rascunhos = estado?.rascunhos || {};
 
@@ -526,6 +549,7 @@ export default function SegundaFase({ theme, s, fase, estado, setEstado, gravarR
           setRascunho={setRascunho(questaoId)}
           voltar={voltar}
           gravarResposta={gravarResposta}
+          salvaNaSessao={salvasNaSessao?.[String(questaoId)]}
           sessaoExpirou={sessaoExpirou}
         />
       )}

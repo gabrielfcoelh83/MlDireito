@@ -37,6 +37,20 @@ export function mesmoRascunho(rascunho, respostas) {
   return [...letras].every((l) => (rascunho?.[l] || '') === (respostas?.[l] || ''));
 }
 
+/**
+ * A mais recente de duas respostas salvas (`criada_em`, e o id no empate).
+ * A tela tem duas fontes da última resposta: a carga do servidor, que pode
+ * ter saído antes do POST terminar, e a que o App acabou de gravar.
+ */
+export function maisRecente(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const ta = Date.parse(a.criada_em);
+  const tb = Date.parse(b.criada_em);
+  if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return tb > ta ? b : a;
+  return Number(b.id) > Number(a.id) ? b : a;
+}
+
 /** Quantos itens têm algum texto escrito. */
 export function respostasPreenchidas(respostas) {
   return Object.values(respostas || {}).filter((t) => typeof t === 'string' && t.trim() !== '').length;

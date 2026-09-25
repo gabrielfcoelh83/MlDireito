@@ -116,6 +116,11 @@ etapa futura.
 
 Ao reabrir a questão aparece a última resposta salva
 (`GET /api/discursivas/respostas`), já conferida, com "Responder de novo".
+Vale a mais recente entre essa carga e a que o `App` gravou nesta sessão
+(`salvasNaSessao`, só em memória): reaberta com o POST no ar, a carga sai
+antes dele e viria vazia. Quando o rascunho some — salvo aqui ou noutra aba,
+que o apaga da chave da conta —, a questão aberta busca de novo a última
+resposta, sem esqueleto.
 Gravação recusada mostra o erro junto da resposta, com "Tentar de novo", e o
 rascunho continua salvo. Falha só na carga das respostas antigas não impede
 responder: um aviso diz que a última resposta não apareceu.
@@ -132,12 +137,17 @@ de resposta do 36º ao 45º Exame.
   1659 são o mesmo artigo; lei pelo número vira a sigla quando existe (8.078
   → CDC, 13.709 → LGPD). Encadeamentos: "art. 186 C/C 927 do CC", "artigo
   496 do Código Civil e 179 do CC" e intervalos ("arts. 186 a 188", que
-  conta o 187). Número sem "art."/"artigo"/"Súmula" antes não é citação.
+  conta o 187; "arts. 186, 187 a 190"). Intervalo de parágrafos ou incisos
+  ("§ 1º a 3º", "incisos I a III") é detalhe do artigo, não artigo novo.
+  Depois de o diploma fechar o grupo, número sem "art." só continua se vier
+  seguido de fim de frase, detalhe, outro diploma ou outro artigo ("do CC e
+  2 dos réus" não cita art. 2). Número sem "art."/"artigo"/"Súmula" antes não é citação.
   Siglas em maiúsculas, ou minúsculas logo depois de "do/da/no/na" ("do
   cc"): solto no texto, "cf." não é Constituição.
-- Sem lookbehind nas expressões regulares: é SyntaxError no Safari antes do
-  16.4, e o módulo é importado pelo App — o app inteiro não carregaria. Um
-  teste confere.
+- Sem lookbehind nas expressões regulares nem `.at(-n)`: o primeiro é
+  SyntaxError no Safari antes do 16.4 (o módulo é importado pelo App — o app
+  inteiro não carregaria), o segundo não existe antes do 15.4. Um teste
+  varre `src/` e `api/`.
 - A comparação é por **diploma + artigo**; parágrafo, inciso e alínea são
   detalhe exibido. Artigo citado sem a lei atende, com o aviso "diga de qual
   lei é o artigo"; artigo de outra lei não atende.

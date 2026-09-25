@@ -104,6 +104,11 @@ export default function App() {
   }, []);
   const [sessao, setSessao] = useState(() => (getToken() ? 'ativa' : 'ausente'));
   const [erroSync, setErroSync] = useState(null);
+  // A última resposta discursiva salva nesta sessão, por questão. É do
+  // servidor e fica só em memória: serve para a questão aberta (ou reaberta
+  // com o POST no ar) mostrar a resposta que acabou de ser salva, em vez da
+  // carga que saiu antes dela.
+  const [salvasNaSessao, setSalvasNaSessao] = useState({});
   const [usuarioTentativas, setUsuarioTentativas] = useState({});
   const [perfil, setPerfil] = useState({ estado: 'carregando', id: null, name: null, email: null });
 
@@ -149,6 +154,7 @@ export default function App() {
   const encerrarSessao = useCallback(() => {
     sessaoEpoch.current += 1;
     setUsuarioTentativas({});
+    setSalvasNaSessao({});
     setPerfil({ estado: 'carregando', id: null, name: null, email: null });
     setErroSync(null);
     setSessao('ausente');
@@ -409,6 +415,7 @@ export default function App() {
       const salva = await salvarRespostaDiscursiva(resposta);
       if (sessaoEpoch.current !== epoch) return null;
       const id = String(resposta.questaoId);
+      setSalvasNaSessao((atual) => ({ ...atual, [id]: salva }));
       setState((st) => {
         const rascunhos = st.segundaFase?.rascunhos || {};
         if (!(id in rascunhos) || !mesmoRascunho(rascunhos[id], resposta.respostas)) return st;
@@ -643,6 +650,7 @@ export default function App() {
         estado={state.segundaFase}
         setEstado={(p) => updateSlice('segundaFase', p)}
         gravarResposta={gravarRespostaDiscursiva}
+        salvasNaSessao={salvasNaSessao}
         sessaoExpirou={encerrarSessao}
       />
     );

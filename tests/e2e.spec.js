@@ -850,11 +850,12 @@ const QUESTAO_DISCURSIVA = {
   ],
 };
 
-async function simularDiscursivas(page, { lista = [], questao = null, falharGravacao = false, atrasoGravacaoMs = 0 } = {}) {
+// `alvo`: a página, ou o contexto inteiro quando o teste abre duas abas.
+async function simularDiscursivas(alvo, { lista = [], questao = null, falharGravacao = false, atrasoGravacaoMs = 0 } = {}) {
   const gravadas = [];
   const enviadas = [];
 
-  await page.route(/\/api\/discursivas(?:[/?]|$)/, async (rota) => {
+  await alvo.route(/\/api\/discursivas(?:[/?]|$)/, async (rota) => {
     const pedido = rota.request();
     const url = new URL(pedido.url());
 
@@ -1019,6 +1020,43 @@ test.describe('2ª fase: questões discursivas', () => {
       return JSON.parse(localStorage.getItem(chave) || '{}').segundaFase?.rascunhos || {};
     });
     expect(naChave).toEqual({});
+  });
+
+  test('reabrir a questão com a gravação no ar mostra a resposta salva quando ela volta', async ({ page }) => {
+    await simularDiscursivas(page, { lista: [RESUMO_DISCURSIVA], questao: QUESTAO_DISCURSIVA, atrasoGravacaoMs: 1500 });
+    await entrar(page);
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    const item = page.locator(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await item.click();
+    await page.fill('[data-testid="resposta-A"]', 'Art. 1.659, I, do CC.');
+    await page.click('[data-testid="corrigir"]');
+    await page.click('[data-testid="voltar-lista"]');
+    await item.click();
+
+    // A carga desta abertura saiu antes do POST voltar; quando ele volta, a
+    // questão mostra a resposta salva — não um campo vazio.
+    await expect(page.locator('[data-testid="sua-resposta-A"]')).toHaveText('Art. 1.659, I, do CC.', { timeout: 5000 });
+    await expect(page.locator('[data-testid="fundamentos-A"]')).toHaveText('Fundamentos: 1 de 1');
+  });
+
+  test('a outra aba, com a mesma questão aberta, passa a mostrar a resposta salva', async ({ page, context }) => {
+    await simularDiscursivas(context, { lista: [RESUMO_DISCURSIVA], questao: QUESTAO_DISCURSIVA });
+    await entrar(page);
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await page.fill('[data-testid="resposta-A"]', 'Resposta escrita na primeira aba, art. 1.659 do CC.');
+
+    // Mesma questão aberta na outra aba, com o rascunho vindo da chave da conta.
+    const outra = await context.newPage();
+    await outra.goto('/');
+    await expect(outra.locator('[data-testid="resposta-A"]')).toHaveValue('Resposta escrita na primeira aba, art. 1.659 do CC.');
+
+    await page.click('[data-testid="corrigir"]');
+    await expect(page.locator('[data-testid="resposta-salva"]')).toBeVisible();
+
+    // A remoção do rascunho chega pelo evento `storage`; a outra aba busca a
+    // última resposta no servidor em vez de ficar com o campo vazio.
+    await expect(outra.locator('[data-testid="sua-resposta-A"]')).toHaveText('Resposta escrita na primeira aba, art. 1.659 do CC.', { timeout: 5000 });
   });
 
   test('com o acervo semeado, a resposta vai para o servidor e volta ao reabrir', async ({ page }) => {
