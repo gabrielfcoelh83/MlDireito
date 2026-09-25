@@ -21,6 +21,15 @@ export default function ConfigSimulado({ theme, s, onConfirm, disciplinas = [], 
 
   const contagem = (nome) => questoes.filter((q) => q.disciplina === nome).length;
 
+  // Botão desabilitado sem motivo parece defeito. O caso que mais engana é a
+  // matéria vinda de Disciplinas que ficou sem questões (acervo recarregado,
+  // reclassificação): ela nem estaria no select, que mostraria outra coisa.
+  const opcoes = disciplina && !disciplinas.includes(disciplina) ? [disciplina, ...disciplinas] : disciplinas;
+  let motivo = null;
+  if (tipo === 'disciplina' && !disciplina) motivo = 'Escolha uma disciplina para começar.';
+  else if (disponiveis === 0 && tipo === 'disciplina') motivo = `${disciplina} não tem questões no acervo agora — escolha outra disciplina ou o simulado geral.`;
+  else if (disponiveis === 0) motivo = 'O acervo ainda não tem questões carregadas.';
+
   return (
     <div style={{ ...s.card, padding: '36px 32px', maxWidth: 680, margin: '0 auto', textAlign: 'center' }}>
       <div style={{ width: 60, height: 60, borderRadius: 16, margin: '0 auto 14px', background: `linear-gradient(135deg, ${theme.gradA}, ${theme.gradB})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -61,7 +70,7 @@ export default function ConfigSimulado({ theme, s, onConfirm, disciplinas = [], 
         {tipo === 'disciplina' && (
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#2c2530' }}>Disciplina</div>
-            {disciplinas.length === 0 ? (
+            {opcoes.length === 0 ? (
               <div style={{ fontSize: 12.5, color: '#8b8391', lineHeight: 1.5 }}>
                 As questões do acervo ainda não foram separadas por matéria. O simulado geral já usa todas.
               </div>
@@ -73,7 +82,7 @@ export default function ConfigSimulado({ theme, s, onConfirm, disciplinas = [], 
                 style={{ width: '100%', padding: 12, border: '1px solid #e3e7ee', borderRadius: 10, fontSize: 13, cursor: 'pointer', background: '#fff' }}
               >
                 <option value="">-- Escolha uma disciplina --</option>
-                {disciplinas.map((d) => (
+                {opcoes.map((d) => (
                   <option key={d} value={d}>{d} ({contagem(d)})</option>
                 ))}
               </select>
@@ -124,6 +133,11 @@ export default function ConfigSimulado({ theme, s, onConfirm, disciplinas = [], 
         >
           <Icon name="play" color="#fff" size={14} /> Iniciar Simulado
         </button>
+        {invalido && motivo && (
+          <div data-testid="motivo-desabilitado" role="status" style={{ fontSize: 12.5, color: '#B45309', textAlign: 'center', marginTop: -8, lineHeight: 1.5 }}>
+            {motivo}
+          </div>
+        )}
       </div>
     </div>
   );

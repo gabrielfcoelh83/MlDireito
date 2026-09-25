@@ -19,10 +19,10 @@ const STATUS = {
 };
 
 // Botões do card no layout LEGJUR: "Iniciar Simulado" abre o formulário do
-// simulado com a matéria já escolhida; "Estudar" abre os temas dela, onde
-// fica o "Praticar" do quiz. Questão ainda sem disciplina forma o card "Sem
-// classificação", que não tem simulado (o filtro do simulado é por
-// disciplina) — ali o botão principal é o quiz.
+// simulado com a matéria já escolhida; "Praticar" abre o quiz dela, a um
+// clique como sempre foi; o nome (ou "Ver temas") abre os temas. Questão
+// ainda sem disciplina forma o card "Sem classificação", que não tem simulado
+// (o filtro do simulado é por disciplina) — ali o botão principal é o quiz.
 export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas, usuarioTentativas, praticarDisciplina, revisarQuestoes, simularDisciplina, go }) {
   const lista = disciplinas || [];
   const simular = (nome) => (simularDisciplina ? simularDisciplina(nome) : go && go('simulados'));
@@ -53,7 +53,21 @@ export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas
               </div>
 
               <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#2c2530' }}>{d.nome}</div>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                  <div
+                    onClick={() => setDisc({ openNome: d.nome })}
+                    style={{ fontSize: 16, fontWeight: 700, color: '#2c2530', cursor: 'pointer' }}
+                  >
+                    {d.nome}
+                  </div>
+                  <button
+                    data-testid="ver-temas"
+                    onClick={() => setDisc({ openNome: d.nome })}
+                    style={{ ...s.link, background: 'none', border: 'none', padding: 0, cursor: 'pointer', flex: 'none' }}
+                  >
+                    Ver temas ›
+                  </button>
+                </div>
                 <div style={{ fontSize: 12.5, color: '#8b8391', marginTop: 3 }}>
                   {d.total} {d.total === 1 ? 'questão' : 'questões'} no acervo · {d.respondidas} já respondidas
                 </div>
@@ -77,19 +91,23 @@ export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas
               </div>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                {d.classificada !== false && (
+                  <button
+                    data-testid="simular-disciplina"
+                    onClick={() => simular(d.nome)}
+                    style={{ flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                  >
+                    <Icon name="graduation-cap" color="#fff" size={13} /> Iniciar Simulado
+                  </button>
+                )}
                 <button
-                  data-testid={d.classificada === false ? 'praticar-disciplina' : 'simular-disciplina'}
-                  onClick={() => (d.classificada === false ? praticarDisciplina(d.nome) : simular(d.nome))}
-                  style={{ flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                  data-testid="praticar-disciplina"
+                  onClick={() => praticarDisciplina(d.nome)}
+                  style={d.classificada === false
+                    ? { flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }
+                    : { padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  <Icon name="play" color="#fff" size={12} /> {d.classificada === false ? 'Praticar' : 'Iniciar Simulado'}
-                </button>
-                <button
-                  data-testid="ver-temas"
-                  onClick={() => setDisc({ openNome: d.nome })}
-                  style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Estudar
+                  <Icon name="play" color={d.classificada === false ? '#fff' : '#5c5462'} size={12} /> Praticar
                 </button>
               </div>
             </div>

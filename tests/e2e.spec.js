@@ -720,10 +720,20 @@ test.describe('Simulado por matéria', () => {
 
     await page.click('[data-testid="iniciar-simulado"]');
     await expect(page.locator('[data-testid^="sim-q-"]')).toHaveCount(3);
-    // Sem feedback durante a prova: marcar não mostra gabarito.
+    // Sem feedback durante a prova: marcar registra a escolha e não revela
+    // nada. Primeiro a marcação tem de ter pegado — sem ela, as checagens de
+    // ausência abaixo passariam até com o clique perdido.
     await page.click('[data-testid="sim-q-0"] [data-testid="alt-0"]');
+    const q0 = page.locator('[data-testid="sim-q-0"]');
+    await expect(q0.locator('[data-testid="alt-0"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-testid="contador-respondidas"]')).toHaveText('1/3 respondidas');
+    // Maiúscula, e não "gabarito": o cabeçalho da prova diz "o gabarito
+    // aparece quando você finalizar", e esse texto pode (e deve) estar ali.
+    await expect(q0).not.toContainText('Gabarito');
+    await expect(q0).not.toContainText('Sua resposta');
+    await expect(q0.locator('[data-testid="veredito"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
     await expect(page.locator('[data-testid^="revisao-q-"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="sim-q-0"] [data-testid="alt-0"]')).toHaveAttribute('aria-checked', 'true');
 
     // Finaliza sem mandar nada: responder aqui gravaria tentativa de questão
     // que só existe nesta resposta simulada. Desmarcar não existe, então
@@ -739,6 +749,63 @@ test.describe('Simulado por matéria', () => {
     await expect(page.locator('[data-testid="nota-final"]')).toHaveText('0%');
     await expect(page.locator('[data-testid="revisao-q-0"]')).toContainText('Em branco');
     await expect(page.locator('[data-testid="revisao-q-0"] [data-testid="explicacao-nao-revisada"]')).toBeVisible();
+  });
+
+  test('"Praticar" abre o quiz da matéria a um clique, em Disciplinas e em Simulados', async ({ page }) => {
+    await page.route('**/api/questoes*', (rota) =>
+      rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ACERVO) }));
+
+    await entrar(page);
+    await page.click('[data-testid="nav-disciplinas"]');
+    await page.click('[data-testid="praticar-disciplina"]');
+    await expect(page.locator('[data-testid="fonte-Direito Penal"]')).toBeVisible();
+    await expect(page.locator('[data-testid="gerar-quiz"]')).toContainText('3 questões');
+
+    await page.click('[data-testid="nav-simulados"]');
+    await page.click('[data-testid="praticar-materia"]');
+    await expect(page.locator('[data-testid="gerar-quiz"]')).toContainText('3 questões');
+  });
+
+  test('matéria pré-selecionada sem questões explica por que não dá para iniciar', async ({ page }) => {
+    await page.route('**/api/questoes*', (rota) =>
+      rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ACERVO) }));
+
+    await entrar(page);
+    // O caminho real é Disciplinas → Simulado com uma matéria que depois some
+    // do acervo; aqui a pré-seleção é posta direto no estado salvo.
+    await page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem('ma-questoes-state-v1') || '{}');
+      st.screen = 'simulados';
+      st.simulados = { ...(st.simulados || {}), preDisciplina: 'Direito Tributário' };
+      localStorage.setItem('ma-questoes-state-v1', JSON.stringify(st));
+    });
+    await page.reload();
+
+    await expect(page.locator('text=Vamos começar!')).toBeVisible();
+    await expect(page.locator('[data-testid="disciplina-simulado"]')).toHaveValue('Direito Tributário');
+    await expect(page.locator('[data-testid="iniciar-simulado"]')).toBeDisabled();
+    await expect(page.locator('[data-testid="motivo-desabilitado"]')).toContainText('Direito Tributário não tem questões');
+  });
+});
+
+test.describe('Simulados com o acervo fora do ar', () => {
+  test('erro de carga vira aviso com botão, não "acervo sem questões"', async ({ page }) => {
+    let falhar = true;
+    await page.route('**/api/questoes*', (rota) => (falhar
+      ? rota.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'falha simulada' }) })
+      : rota.continue()));
+
+    await entrar(page);
+    await page.click('[data-testid="nav-simulados"]');
+
+    await expect(page.locator('[data-testid="simulados-acervo-erro"]')).toBeVisible();
+    await expect(page.locator('text=O acervo ainda não tem questões carregadas')).toHaveCount(0);
+    await expect(page.locator('[data-testid="novo-simulado"]')).toBeDisabled();
+
+    falhar = false;
+    await page.click('[data-testid="simulados-acervo-erro"] button:has-text("Tentar de novo")');
+    await expect(page.locator('[data-testid="simulados-acervo-erro"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="novo-simulado"]')).toBeEnabled();
   });
 });
 

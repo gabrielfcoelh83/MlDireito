@@ -16,7 +16,7 @@ const SITUACAO = {
 // Botões escuros do layout LEGJUR — o mesmo tom já usado no hub e no config.
 const btnEscuro = { background: '#343a46', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 };
 
-export default function Simulados({ theme, s, data, sim, setSim, setResultadosHistorico, resultados_historico, go, registrarRespostas, praticarDisciplina }) {
+export default function Simulados({ theme, s, data, sim, setSim, setResultadosHistorico, resultados_historico, go, registrarRespostas, praticarDisciplina, acervo, recarregarAcervo }) {
   const preDisciplina = sim?.preDisciplina || null;
   const [etapa, setEtapa] = useState(preDisciplina ? 'config' : 'lista');
   const [simulado, setSimulado] = useState(null);
@@ -137,7 +137,20 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
       { label: 'Tempo total', value: hist.length > 0 ? hist.reduce((a, b) => a + b.tempo_total_minutos, 0) + 'min' : '-' },
     ];
     const materias = DISCIPLINAS.filter((d) => d.classificada !== false && d.total > 0);
+    // Lista vazia tem três causas, e só uma é "acervo sem questões": a carga
+    // pode estar em curso ou ter falhado. Dizer "ainda não tem questões" a
+    // quem teve erro de rede manda a pessoa esperar por algo que não vem.
+    const estadoAcervo = acervo?.estado || 'pronto';
     const semAcervo = QUESTOES.length === 0;
+    const carregando = semAcervo && estadoAcervo === 'carregando';
+    const erroAcervo = semAcervo && estadoAcervo === 'erro';
+    const textoHero = carregando
+      ? 'Carregando o acervo de questões…'
+      : erroAcervo
+        ? 'O acervo não carregou, então ainda não há questões para sortear.'
+        : semAcervo
+          ? 'O acervo ainda não tem questões carregadas.'
+          : `Sorteio entre ${QUESTOES.length} ${QUESTOES.length === 1 ? 'questão' : 'questões'} dos Exames de Ordem, com gabarito oficial da FGV e tempo de prova real.`;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -150,6 +163,24 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
           ))}
         </div>
 
+        {erroAcervo && (
+          <div
+            role="alert"
+            data-testid="simulados-acervo-erro"
+            style={{ ...s.card, display: 'flex', alignItems: 'center', gap: 14, background: '#FEF2F2', border: '1px solid #FECACA' }}
+          >
+            <Icon name="circle-x" color="#DC2626" size={22} />
+            <div style={{ flex: 1, fontSize: 13, color: '#B91C1C', lineHeight: 1.5 }}>
+              <b>O acervo não carregou.</b> {acervo?.erro ? `${acervo.erro}. ` : ''}As questões vêm do servidor, então sem esta chamada não há simulado.
+            </div>
+            {recarregarAcervo && (
+              <button style={{ ...s.btnPrimary, flex: 'none', cursor: 'pointer' }} onClick={recarregarAcervo}>
+                Tentar de novo
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Hero: Simulado Geral */}
         <div data-testid="hero-simulado-geral" style={{ ...s.card, display: 'flex', alignItems: 'center', gap: 20, padding: 24, background: `linear-gradient(120deg, ${theme.gradA}12, ${theme.gradB}10), #fff` }}>
           <div style={{ width: 60, height: 60, borderRadius: 16, background: `linear-gradient(135deg, ${theme.gradA}, ${theme.gradB})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
@@ -158,9 +189,7 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: '#2c2530' }}>Simulado Geral — OAB 1ª Fase</div>
             <div style={{ fontSize: 13, color: '#8b8391', marginTop: 4, lineHeight: 1.5 }}>
-              {semAcervo
-                ? 'O acervo ainda não tem questões carregadas.'
-                : `Sorteio entre ${QUESTOES.length} ${QUESTOES.length === 1 ? 'questão' : 'questões'} dos Exames de Ordem, com gabarito oficial da FGV e tempo de prova real.`}
+              {textoHero}
             </div>
           </div>
           <button
@@ -183,7 +212,11 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
           {/* As matérias aqui eram uma lista fixa de oito nomes; hoje vêm do
               acervo real. Questão ainda sem disciplina (o enriquecimento não
               passou) não forma card: ela só entra no simulado geral. */}
-          {materias.length === 0 ? (
+          {carregando ? (
+            <div data-testid="treino-carregando" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginTop: 18 }}>
+              {[0, 1, 2].map((i) => <div key={i} className="esqueleto" style={{ height: 170, borderRadius: 16 }} />)}
+            </div>
+          ) : erroAcervo ? null : materias.length === 0 ? (
             <div data-testid="treino-vazio" style={{ ...s.card, textAlign: 'center', padding: '32px 20px', color: '#8b8391', fontSize: 13.5, marginTop: 18, lineHeight: 1.6 }}>
               {semAcervo
                 ? 'Nenhuma disciplina no acervo ainda.'
@@ -209,13 +242,15 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
                       onClick={() => abrirConfig(d.nome)}
                       style={{ ...btnEscuro, flex: 1, padding: '10px 12px', borderRadius: 9, fontSize: 12.5, gap: 7 }}
                     >
-                      <Icon name="play" color="#fff" size={12} /> Iniciar Simulado
+                      <Icon name="graduation-cap" color="#fff" size={13} /> Iniciar Simulado
                     </button>
+                    {/* Mesmo nome e destino do "Praticar" de Disciplinas: o quiz da matéria. */}
                     <button
-                      onClick={() => (praticarDisciplina ? praticarDisciplina(d.nome) : go && go('disciplinas'))}
-                      style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                      data-testid="praticar-materia"
+                      onClick={() => (praticarDisciplina ? praticarDisciplina(d.nome) : go && go('questoes'))}
+                      style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                     >
-                      Estudar
+                      <Icon name="play" color="#5c5462" size={12} /> Praticar
                     </button>
                   </div>
                 </div>
