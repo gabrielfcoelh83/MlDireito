@@ -175,7 +175,7 @@ recarregar a página volta para ela — mas não há URL por tela.
 | `dashboard` | `Dashboard.jsx` | Resumo do dia, próximo passo, evolução | `dash`, `setDash`, `acervo` |
 | `cronograma` | `Cronograma.jsx` | Sugestão de semana e calendário do mês | — |
 | `questoes` | `Questoes.jsx` | Escolha de fonte e quiz | `quest`, `setQuest`, `registrar`, `acervo`, `recarregarAcervo` |
-| `simulados` | `Simulados.jsx` | Hub, formulário, prova e resultado do simulado (ver "Simulados") | `sim`, `setSim`, `setResultadosHistorico`, `registrarRespostas` |
+| `simulados` | `Simulados.jsx` | Hub, formulário, prova e resultado do simulado (ver "Simulados") | `sim`, `setSim`, `setResultadosHistorico`, `registrarRespostas`, `acervo`, `recarregarAcervo` |
 | `revisoes` | `Revisoes.jsx` | Erradas, favoritas, menor desempenho | `rev`, `setRev`, `favoritos`, `toggleFavorito` |
 | `desempenho` | `Desempenho.jsx` | Evolução ao longo do tempo | `perf`, `setPerf` |
 | `estatisticas` | `Estatisticas.jsx` | Números por período e disciplina | `filtros`, `setFiltros` |
@@ -192,10 +192,14 @@ Quatro etapas num `useState` local da tela (`etapa`), nenhuma com URL:
 1. **Hub** — cartão "Simulado Geral — OAB 1ª Fase" e a grade "Treino por
    Matéria", um card por disciplina do acervo com questões (contagem real,
    `montarDisciplinas`). Questão sem disciplina não forma card: só entra no
-   geral. "Estudar" leva ao quiz da matéria (`praticarDisciplina`).
+   geral. "Praticar" leva ao quiz da matéria (`praticarDisciplina`) — mesmo
+   nome e destino do botão de Disciplinas. Lista vazia distingue acervo
+   carregando (esqueleto), com erro (aviso com "Tentar de novo", que chama
+   `recarregarAcervo`) e vazio de fato.
 2. **"Vamos começar!"** (`ConfigSimulado`) — geral ou por disciplina e
    dropdown de quantidade. Pedindo mais do que o acervo tem, avisa e a prova
-   sai com o que existe.
+   sai com o que existe. Com o botão desabilitado, diz o motivo (ex.: matéria
+   pré-selecionada que ficou sem questões).
 3. **Prova** — todas as questões numa página, alternativas em rádio, sem
    correção até finalizar. Barra fixa embaixo: `Cronometro` (tempo esgotado
    finaliza sozinho), "X/N respondidas" e Finalizar.
@@ -207,6 +211,9 @@ Finalizar manda as respostas pela fila (`registrarRespostas`, ver "429") e
 grava o resumo em `resultados_historico` (dado da conta). O resumo guarda
 `errados` como "não acertou" (inclui em branco), que é o que `metrics.js`
 lê, e `em_branco` à parte.
+
+Os cards de Disciplinas têm "Iniciar Simulado" (principal), "Praticar" (o
+quiz, a um clique) e "Ver temas" (ou o clique no nome).
 
 Disciplinas → "Iniciar Simulado": `simularDisciplina` (prop montada no
 `App`) grava `simulados.preDisciplina` e troca a tela; o Simulados abre no

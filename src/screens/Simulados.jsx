@@ -202,62 +202,65 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
           </button>
         </div>
 
-        {/* Treino por Matéria */}
-        <div>
-          <div style={{ textAlign: 'center', margin: '8px 0 4px' }}>
-            <div style={{ fontSize: 21, fontWeight: 700, color: '#2c2530' }}>Treino por Matéria</div>
-            <div style={{ width: 120, height: 3, borderRadius: 2, margin: '8px auto 0', background: `linear-gradient(90deg, ${theme.gradA}, ${theme.gradB})` }} />
-          </div>
+        {/* Treino por Matéria — some com o erro do acervo: o aviso acima já
+            diz o que falta, e um título sem nada embaixo parece tela quebrada. */}
+        {!erroAcervo && (
+          <div>
+            <div style={{ textAlign: 'center', margin: '8px 0 4px' }}>
+              <div style={{ fontSize: 21, fontWeight: 700, color: '#2c2530' }}>Treino por Matéria</div>
+              <div style={{ width: 120, height: 3, borderRadius: 2, margin: '8px auto 0', background: `linear-gradient(90deg, ${theme.gradA}, ${theme.gradB})` }} />
+            </div>
 
-          {/* As matérias aqui eram uma lista fixa de oito nomes; hoje vêm do
-              acervo real. Questão ainda sem disciplina (o enriquecimento não
-              passou) não forma card: ela só entra no simulado geral. */}
-          {carregando ? (
-            <div data-testid="treino-carregando" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginTop: 18 }}>
-              {[0, 1, 2].map((i) => <div key={i} className="esqueleto" style={{ height: 170, borderRadius: 16 }} />)}
-            </div>
-          ) : erroAcervo ? null : materias.length === 0 ? (
-            <div data-testid="treino-vazio" style={{ ...s.card, textAlign: 'center', padding: '32px 20px', color: '#8b8391', fontSize: 13.5, marginTop: 18, lineHeight: 1.6 }}>
-              {semAcervo
-                ? 'Nenhuma disciplina no acervo ainda.'
-                : 'As questões do acervo ainda não foram separadas por matéria. Enquanto isso, o Simulado Geral usa todas elas.'}
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginTop: 18 }}>
-              {materias.map((d) => (
-                <div key={d.nome} data-testid="card-materia" style={{ ...s.card, display: 'flex', flexDirection: 'column', gap: 12, padding: 22 }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 14, background: `${d.cor}1e`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name={ICONE_POR_DISCIPLINA[d.nome] || 'library'} color={d.cor} size={26} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#2c2530' }}>{d.nome}</div>
-                    <div style={{ fontSize: 12.5, color: '#8b8391', marginTop: 3 }}>
-                      {d.total} {d.total === 1 ? 'questão' : 'questões'} no acervo
-                      {d.pct != null ? ` · ${d.pct}% de acerto seu` : ''}
+            {/* As matérias aqui eram uma lista fixa de oito nomes; hoje vêm do
+                acervo real. Questão ainda sem disciplina (o enriquecimento não
+                passou) não forma card: ela só entra no simulado geral. */}
+            {carregando ? (
+              <div data-testid="treino-carregando" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginTop: 18 }}>
+                {[0, 1, 2].map((i) => <div key={i} className="esqueleto" style={{ height: 170, borderRadius: 16 }} />)}
+              </div>
+            ) : materias.length === 0 ? (
+              <div data-testid="treino-vazio" style={{ ...s.card, textAlign: 'center', padding: '32px 20px', color: '#8b8391', fontSize: 13.5, marginTop: 18, lineHeight: 1.6 }}>
+                {semAcervo
+                  ? 'Nenhuma disciplina no acervo ainda.'
+                  : 'As questões do acervo ainda não foram separadas por matéria. Enquanto isso, o Simulado Geral usa todas elas.'}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginTop: 18 }}>
+                {materias.map((d) => (
+                  <div key={d.nome} data-testid="card-materia" style={{ ...s.card, display: 'flex', flexDirection: 'column', gap: 12, padding: 22 }}>
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: `${d.cor}1e`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name={ICONE_POR_DISCIPLINA[d.nome] || 'library'} color={d.cor} size={26} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#2c2530' }}>{d.nome}</div>
+                      <div style={{ fontSize: 12.5, color: '#8b8391', marginTop: 3 }}>
+                        {d.total} {d.total === 1 ? 'questão' : 'questões'} no acervo
+                        {d.pct != null ? ` · ${d.pct}% de acerto seu` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                      <button
+                        data-testid="simular-materia"
+                        onClick={() => abrirConfig(d.nome)}
+                        style={{ ...btnEscuro, flex: 1, padding: '10px 12px', borderRadius: 9, fontSize: 12.5, gap: 7, whiteSpace: 'nowrap' }}
+                      >
+                        <Icon name="graduation-cap" color="#fff" size={13} /> Iniciar Simulado
+                      </button>
+                      {/* Mesmo nome e destino do "Praticar" de Disciplinas: o quiz da matéria. */}
+                      <button
+                        data-testid="praticar-materia"
+                        onClick={() => (praticarDisciplina ? praticarDisciplina(d.nome) : go && go('questoes'))}
+                        style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Icon name="play" color="#5c5462" size={12} /> Praticar
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
-                    <button
-                      data-testid="simular-materia"
-                      onClick={() => abrirConfig(d.nome)}
-                      style={{ ...btnEscuro, flex: 1, padding: '10px 12px', borderRadius: 9, fontSize: 12.5, gap: 7 }}
-                    >
-                      <Icon name="graduation-cap" color="#fff" size={13} /> Iniciar Simulado
-                    </button>
-                    {/* Mesmo nome e destino do "Praticar" de Disciplinas: o quiz da matéria. */}
-                    <button
-                      data-testid="praticar-materia"
-                      onClick={() => (praticarDisciplina ? praticarDisciplina(d.nome) : go && go('questoes'))}
-                      style={{ padding: '10px 14px', background: '#fff', color: '#5c5462', border: '1px solid #e3e7ee', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <Icon name="play" color="#5c5462" size={12} /> Praticar
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Histórico */}
         {hist.length > 0 && (

@@ -95,7 +95,7 @@ export default function Disciplinas({ theme, s, data, disc, setDisc, disciplinas
                   <button
                     data-testid="simular-disciplina"
                     onClick={() => simular(d.nome)}
-                    style={{ flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                    style={{ flex: 1, padding: '10px 12px', background: '#343a46', color: '#fff', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, whiteSpace: 'nowrap' }}
                   >
                     <Icon name="graduation-cap" color="#fff" size={13} /> Iniciar Simulado
                   </button>
