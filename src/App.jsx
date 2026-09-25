@@ -21,7 +21,7 @@ import {
 import SeletorDeFase from './components/ui/SeletorDeFase';
 import { mesmoRascunho } from './lib/discursivas';
 import { fichaConcluida, montarFicha, respostasIniciais, opcoesDeDificuldade } from './lib/ficha';
-import { criarFilaDePreferencias } from './lib/preferencias';
+import { criarFilaDePreferencias, configuracoesDoPerfil } from './lib/preferencias';
 
 import Login from './screens/Login';
 import Dashboard from './screens/Dashboard';
@@ -88,8 +88,9 @@ const TENTATIVAS_COM_TELA_DE_ESPERA = 2;
 
 const PERFIL_VAZIO = { estado: 'carregando', id: null, name: null, email: null, preferencias: null };
 
-// O PUT de `profile_data` (ver `lib/preferencias.js`). `extra.nome` vai junto
-// quando é a ficha que grava.
+// O PUT de `profile_data` (ver `lib/preferencias.js`): só as chaves que
+// mudaram, que o user-service mescla. `extra.nome` vai junto quando é a ficha
+// que grava.
 const novaFilaDePreferencias = () => criarFilaDePreferencias(
   (preferencias, extra) => salvarPerfil(extra.id, { nome: extra.nome, preferencias }),
 );
@@ -136,6 +137,13 @@ export default function App() {
   // até a pessoa clicar em "Começar a estudar". Sem isto, o perfil voltando
   // com `concluidaEm` a tiraria da tela no mesmo instante.
   const [fichaAberta, setFichaAberta] = useState(false);
+  // O perfil que chega tarde — depois de uma falha, com o app já aberto — não
+  // derruba a tela em uso: a ficha espera a próxima troca de tela (menu,
+  // aviso do sino, seletor de fase). Um simulado em andamento vive só na
+  // tela de Simulados, e sair dela já o descarta; trocar a tela no meio dele
+  // pela ficha perderia a prova sem a pessoa ter pedido nada.
+  const [fichaAdiada, setFichaAdiada] = useState(false);
+  const perfilEstado = useRef('carregando');
 
   // O acervo é do servidor, não do bundle. Guardar o estado do carregamento
   // junto com as questões — e não só a lista — é o que permite a tela
@@ -158,10 +166,9 @@ export default function App() {
   // dispara dois PUT, e sem a fila eles correm soltos — se o primeiro chegar
   // ao servidor depois do segundo, o valor mais novo é sobrescrito pelo mais
   // velho e a tela mostra uma coisa que o banco não tem. Foi assim que o
-  // teste de e2e ficou intermitente. A fila também guarda o `profile_data`
-  // que o servidor confirmou e manda sempre o objeto completo: o user-service
-  // substitui a coluna inteira, e um PUT só de meta apagaria a ficha.
-  // Uma fila por sessão (`encerrarSessao` troca).
+  // teste de e2e ficou intermitente. Cada PUT leva só as chaves que mudaram
+  // (o user-service mescla), e a resposta — o `profile_data` inteiro — é o
+  // que a tela passa a mostrar. Uma fila por sessão (`encerrarSessao` troca).
   const filaDePreferencias = useRef(null);
   if (filaDePreferencias.current == null) filaDePreferencias.current = novaFilaDePreferencias();
 
@@ -187,7 +194,9 @@ export default function App() {
     setUsuarioTentativas({});
     setSalvasNaSessao({});
     setPerfil(PERFIL_VAZIO);
+    perfilEstado.current = 'carregando';
     setFichaAberta(false);
+    setFichaAdiada(false);
     setErroSync(null);
     setSessao('ausente');
   }, []);
@@ -282,7 +291,10 @@ export default function App() {
     const tentar = (tentativa) => buscarPerfil(payload.id)
       .then((p) => {
         if (cancelado) return;
-        filaDePreferencias.current.conhecer(p.preferencias);
+        // O app já estava aberto (o perfil tinha falhado): a ficha, se
+        // faltar, espera a próxima troca de tela.
+        if (perfilEstado.current === 'erro') setFichaAdiada(true);
+        perfilEstado.current = 'pronto';
         setPerfil({ estado: 'pronto', id: p.id, name: p.name, email: p.email || payload.email, preferencias: p.preferencias || {} });
 
         const dadosDaConta = carregarDadosDaConta(p.id);
@@ -296,18 +308,12 @@ export default function App() {
           // certo enquanto toda edição for gravada antes desta resposta chegar.
           const mesmaConta = String(st.__usuario) === String(p.id);
           const base = estadoDaConta(st, p.id, DEFAULT_STATE, mesmaConta ? {} : dadosDaConta);
-          const prefs = p.preferencias || {};
-
           return {
             ...base,
             __usuario: p.id,
-            configuracoes: {
-              ...base.configuracoes,
-              // O servidor manda em meta e data da prova: são as preferências
-              // que precisam seguir a pessoa de um aparelho para o outro.
-              ...(prefs.meta != null ? { meta: prefs.meta } : {}),
-              ...(prefs.dataProva !== undefined ? { dataProva: prefs.dataProva } : {}),
-            },
+            // O servidor manda em meta e data da prova: são as preferências
+            // que precisam seguir a pessoa de um aparelho para o outro.
+            configuracoes: { ...base.configuracoes, ...configuracoesDoPerfil(p.preferencias, base.configuracoes) },
           };
         });
       })
@@ -318,6 +324,7 @@ export default function App() {
         // Cair aqui não pode virar tela de erro — vira nome vazio. Só a ficha
         // espera por ele (ver ESPERAS_DO_PERFIL).
         if (tentativa >= TENTATIVAS_COM_TELA_DE_ESPERA || tentativa >= ESPERAS_DO_PERFIL.length) {
+          if (perfilEstado.current !== 'pronto') perfilEstado.current = 'erro';
           setPerfil((atual) => (atual.estado === 'erro'
             ? atual
             : { estado: 'erro', id: payload.id, name: null, email: payload.email, preferencias: null }));
@@ -401,7 +408,10 @@ export default function App() {
     [acervo.questoes, disciplinas]
   );
 
-  const goTo = (screen) => setState((st) => ({ ...st, screen }));
+  const goTo = (screen) => {
+    setFichaAdiada(false);
+    setState((st) => ({ ...st, screen }));
+  };
   const updateSlice = (key, partial) =>
     setState((st) => ({ ...st, [key]: typeof partial === 'function' ? partial(st[key]) : { ...st[key], ...partial } }));
 
@@ -467,6 +477,23 @@ export default function App() {
     if (!edicao) setFichaAberta(true);
 
     try {
+      // Outra aba (ou aparelho) pode ter concluído a ficha enquanto esta a
+      // mostrava. Aí vale a de lá: esta entra no app sem sobrescrever. Se a
+      // consulta falhar, grava do mesmo jeito — é ela que é opcional.
+      if (!edicao) {
+        const atual = await buscarPerfil(perfil.id).catch((err) => {
+          if (err.status === 401) throw err;
+          return null;
+        });
+        if (sessaoEpoch.current !== epoch) return null;
+        if (atual && fichaConcluida(atual.preferencias)) {
+          setPerfil((p) => ({ ...p, name: atual.name ?? p.name, preferencias: atual.preferencias }));
+          setState((st) => ({ ...st, configuracoes: { ...st.configuracoes, ...configuracoesDoPerfil(atual.preferencias, st.configuracoes) } }));
+          setFichaAberta(false);
+          return null;
+        }
+      }
+
       const resposta = await filaDePreferencias.current.gravar(preferencias, {
         continuar: () => sessaoEpoch.current === epoch,
         extra: { id: perfil.id, nome: nomeNovo },
@@ -520,6 +547,7 @@ export default function App() {
 
   const trocarFase = (chave) => {
     setNotifOpen(false);
+    setFichaAdiada(false);
     setState((st) => ({ ...st, fase: faseValida(chave).chave }));
   };
 
@@ -702,12 +730,17 @@ export default function App() {
             <Icon name="scale" color="#fff" size={20} />
           </div>
           Carregando seu perfil…
+          {/* Rede ruim pode deixar esta tela alguns segundos (cada busca tem
+              10 s de prazo, e ela é repetida). Sair é a saída que não depende
+              do servidor. */}
+          <button type="button" data-testid="sair" onClick={sair} style={{ ...s.btnOutline, marginTop: 6 }}>Sair</button>
         </div>
       </div>
     );
   }
 
-  if (perfil.estado === 'pronto' && (fichaAberta || !fichaConcluida(perfil.preferencias))) {
+  const fichaPendente = perfil.estado === 'pronto' && !fichaConcluida(perfil.preferencias);
+  if (fichaAberta || (fichaPendente && !fichaAdiada)) {
     return (
       <FichaDeBoasVindas
         theme={theme}
@@ -856,6 +889,14 @@ export default function App() {
       titulo: `Faltam ${meta.faltam} ${meta.faltam === 1 ? 'questão' : 'questões'} para a meta de hoje`,
       texto: `Você respondeu ${meta.respondidas} de ${meta.meta}.`,
       acao: { rotulo: 'Praticar', ir: 'questoes' },
+    });
+  }
+  if (fichaPendente) {
+    notificacoes.push({
+      icone: 'clipboard-list', cor: '#8B5CF6',
+      titulo: 'Preencha sua ficha de boas-vindas',
+      texto: 'Ela abre na próxima troca de tela.',
+      acao: { rotulo: 'Preencher agora', ir: state.screen },
     });
   }
   if (revisao.resumo.erros > 0) {

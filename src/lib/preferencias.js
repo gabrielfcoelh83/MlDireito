@@ -1,66 +1,56 @@
 // A fila das gravações de `profile_data`.
 //
-// O user-service SUBSTITUI a coluna inteira a cada PUT (`COALESCE($3,
-// profile_data)`: não mescla). Enquanto só havia meta e data da prova, mandar
-// as duas bastava. Com a ficha de boas-vindas em `profile_data.ficha`, um PUT
-// de `{ meta, dataProva }` apagaria a ficha — e a pessoa voltaria a vê-la no
-// próximo acesso. Então todo PUT leva o objeto completo: o último que o
-// servidor confirmou, com a mudança por cima.
+// O user-service MESCLA o `profile_data` no primeiro nível (`profile_data ||
+// $3`; chave com null grava null, e o total mesclado tem teto de 20000
+// bytes). Então cada gravação manda só as chaves que
+// mudaram — `{ meta, dataProva }` juntas, ou `{ ficha }` — e nunca o objeto
+// inteiro reconstruído a partir do que esta aba conhecia: uma aba
+// desatualizada, mandando o objeto inteiro, desfaria a edição feita em outra
+// aba (a ficha concluída lá, por exemplo).
 //
-// "O último que o servidor confirmou" é lido na hora em que o PUT sai, não na
-// hora em que entrou na fila: meta e ficha enfileiradas em seguida saem uma
-// depois da outra, e a segunda já parte do que a primeira gravou. Uma de
-// cada vez pelo mesmo motivo de antes — dois PUT soltos podem chegar fora de
-// ordem e o mais velho sobrescrever o mais novo.
-
-/** O objeto completo a gravar: o conhecido, com a mudança por cima. */
-export function mesclarPreferencias(conhecido, parcial) {
-  return { ...(conhecido || {}), ...(parcial || {}) };
-}
-
-export class PerfilDesconhecidoError extends Error {
-  constructor() {
-    super('seu perfil ainda não carregou. Tente de novo em instantes.');
-    this.name = 'PerfilDesconhecidoError';
-  }
-}
+// Uma de cada vez: dois PUT soltos podem chegar fora de ordem e o mais velho
+// sobrescrever o mais novo na mesma chave. A resposta do servidor traz o
+// `profile_data` inteiro já mesclado, e é ela que atualiza a cópia da tela.
 
 /**
- * `salvar(preferenciasCompletas, extra)` faz o PUT e devolve o que o servidor
- * respondeu, com `preferencias` (o `profile_data` gravado). `extra` passa
- * direto (o nome, que vai no mesmo PUT da ficha).
+ * `salvar(parcial, extra)` faz o PUT e devolve o que o servidor respondeu,
+ * com `preferencias` (o `profile_data` inteiro, já mesclado). `extra` passa
+ * direto (o id e, na ficha, o nome, que vai no mesmo PUT).
  *
- * Uma fila por sessão: a da sessão anterior pode ainda ter um PUT no ar, e
- * ele não pode ensinar a esta o `profile_data` de outra conta.
+ * Uma fila por sessão: a da sessão anterior pode ainda ter um PUT no ar.
  */
 export function criarFilaDePreferencias(salvar) {
-  // null = ainda não sabemos o que o servidor tem. Gravar assim apagaria o
-  // que estiver lá (a ficha, por exemplo), então não grava.
-  let conhecido = null;
   let cauda = Promise.resolve();
 
   return {
-    conhecer(preferencias) {
-      conhecido = { ...(preferencias || {}) };
-    },
-    conhecido: () => conhecido,
-
     /**
      * Entra na fila. Resolve com a resposta do servidor, ou com `null` se
      * `continuar()` disser que a sessão acabou antes da vez (o PUT não sai).
-     * Rejeita com o erro do PUT, ou `PerfilDesconhecidoError`.
+     * Rejeita com o erro do PUT.
      */
     gravar(parcial, { continuar = () => true, extra } = {}) {
       const vez = cauda.then(async () => {
         if (!continuar()) return null;
-        if (conhecido == null) throw new PerfilDesconhecidoError();
-        const resposta = await salvar(mesclarPreferencias(conhecido, parcial), extra);
-        conhecido = { ...(resposta?.preferencias || mesclarPreferencias(conhecido, parcial)) };
-        return resposta;
+        return salvar({ ...(parcial || {}) }, extra);
       });
       // A falha de um PUT não trava os seguintes.
       cauda = vez.catch(() => {});
       return vez;
     },
+  };
+}
+
+/**
+ * Meta e data da prova vindas do servidor, para `state.configuracoes`.
+ *
+ * O servidor manda quando tem a chave: `dataProva: null` gravado é "sem
+ * data" e vale. Chave ausente é preferência que esta conta nunca gravou, e aí
+ * fica o valor local.
+ */
+export function configuracoesDoPerfil(preferencias, locais = {}) {
+  const p = preferencias || {};
+  return {
+    meta: p.meta != null ? p.meta : locais.meta,
+    dataProva: 'dataProva' in p ? (p.dataProva ?? null) : (locais.dataProva ?? null),
   };
 }

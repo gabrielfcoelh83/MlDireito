@@ -22,11 +22,16 @@ function contarTentativas(page) {
 }
 
 // A ficha de boas-vindas é obrigatória: enquanto `profile_data.ficha` não
-// tiver `concluidaEm`, o app mostra a ficha no lugar do menu. Os testes que
-// não são sobre a ficha a concluem pela API — GET do perfil e PUT do
-// `profile_data` inteiro, com a ficha por cima do que já estava lá (o
-// user-service substitui a coluna, não mescla). Sem dificuldades marcadas:
-// elas mudariam a ordem do "Foco do dia" que outros testes conferem.
+// tiver `concluidaEm`, o app mostra a ficha no lugar do menu.
+//
+// - O usuário semeado a tem concluída pela API (PUT só de `{ ficha }`, que o
+//   user-service mescla), uma vez por execução, em `entrar`.
+// - Conta criada pela tela passa pela ficha pela TELA (`passarDaFicha`), sem
+//   recarregar: vários testes medem justamente o que acontece na mesma aba,
+//   sem reload (o nome que chega com atraso, a troca de conta).
+//
+// Sem dificuldades marcadas: elas mudariam a ordem do "Foco do dia" que
+// outros testes conferem.
 const FICHA_DE_TESTE = {
   versao: 1,
   concluidaEm: '2026-01-01T00:00:00.000Z',
@@ -57,7 +62,7 @@ async function concluirFichaPelaApi(page) {
     const res = await fetch(`/api/users/${id}`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ profile_data: { ...(perfil.profile_data || {}), ficha } }),
+      body: JSON.stringify({ profile_data: { ficha } }),
     });
     return res.ok ? 'gravou' : `PUT devolveu ${res.status}`;
   }, FICHA_DE_TESTE);
@@ -65,11 +70,33 @@ async function concluirFichaPelaApi(page) {
   return resultado;
 }
 
-// Depois de criar uma conta pela tela: conclui a ficha e entra no app.
-async function passarDaFicha(page) {
-  await concluirFichaPelaApi(page);
-  await page.reload();
-  await expect(page.locator('[data-testid="nav-questoes"]')).toBeVisible({ timeout: 15000 });
+// Respostas mínimas até o último passo da ficha, sem concluir.
+async function preencherFichaAteOFim(page) {
+  const titulo = page.locator('[data-testid="ficha-titulo"]');
+  await expect(titulo).toHaveText('Você', { timeout: 15000 });
+  await page.click('[data-testid="ficha-continuar"]');
+  await expect(titulo).toHaveText('A prova');
+  await page.check('[data-testid="ficha-data-nao-sei"] input');
+  await page.check('[data-testid="ficha-ja-fez-nao"] input');
+  await page.click('[data-testid="ficha-continuar"]');
+  await expect(titulo).toHaveText('Sua rotina');
+  await page.check('[data-testid="ficha-dia-1"] input');
+  await page.check('[data-testid="ficha-tempo-60"] input');
+  await page.click('[data-testid="ficha-continuar"]');
+  await expect(titulo).toHaveText('Pontos fracos');
+  await page.check('[data-testid="ficha-dificuldade-nao-sei"] input');
+}
+
+// Depois de criar uma conta pela tela: passa pela ficha na mesma aba, sem
+// recarregar, e entra no app. `nome`: o que a ficha deve trazer preenchido —
+// o nome do perfil, que chega do user-service um instante depois do cadastro.
+async function passarDaFicha(page, { nome } = {}) {
+  await expect(page.locator('[data-testid="ficha"]')).toBeVisible({ timeout: 15000 });
+  if (nome) await expect(page.locator('[data-testid="ficha-nome"]')).toHaveValue(nome);
+  await preencherFichaAteOFim(page);
+  await page.click('[data-testid="ficha-continuar"]');
+  await page.click('[data-testid="ficha-entrar"]');
+  await expect(page.locator('[data-testid="nav-questoes"]')).toBeVisible();
 }
 
 // O `profile_data` gravado no servidor, lido com o token do app.
@@ -512,7 +539,7 @@ test.describe('Perfil e preferências', () => {
     await page.fill('#campo-senha', 'senha-de-teste-123');
     await page.fill('[data-testid="campo-confirmacao"]', 'senha-de-teste-123');
     await page.click('button[type="submit"]');
-    await passarDaFicha(page);
+    await passarDaFicha(page, { nome });
     return email;
   }
 
@@ -614,7 +641,7 @@ test.describe('Ficha de boas-vindas', () => {
     await page.reload();
   });
 
-  async function criarContaNaTela(page, nome) {
+  async function criarContaNaTela(page, nome, { esperarFicha = true } = {}) {
     const email = `ficha-${Date.now()}@exemplo.test`;
     await page.click('[data-testid="trocar-modo"]');
     await page.fill('[data-testid="campo-nome"]', nome);
@@ -622,27 +649,11 @@ test.describe('Ficha de boas-vindas', () => {
     await page.fill('#campo-senha', 'senha-de-teste-123');
     await page.fill('[data-testid="campo-confirmacao"]', 'senha-de-teste-123');
     await page.click('button[type="submit"]');
-    await expect(page.locator('[data-testid="ficha"]')).toBeVisible({ timeout: 15000 });
+    if (esperarFicha) await expect(page.locator('[data-testid="ficha"]')).toBeVisible({ timeout: 15000 });
     return email;
   }
 
   const titulo = (page) => page.locator('[data-testid="ficha-titulo"]');
-
-  // Respostas mínimas até o último passo, sem concluir.
-  async function preencherAteOFim(page) {
-    await expect(titulo(page)).toHaveText('Você');
-    await page.click('[data-testid="ficha-continuar"]');
-    await expect(titulo(page)).toHaveText('A prova');
-    await page.check('[data-testid="ficha-data-nao-sei"] input');
-    await page.check('[data-testid="ficha-ja-fez-nao"] input');
-    await page.click('[data-testid="ficha-continuar"]');
-    await expect(titulo(page)).toHaveText('Sua rotina');
-    await page.check('[data-testid="ficha-dia-1"] input');
-    await page.check('[data-testid="ficha-tempo-60"] input');
-    await page.click('[data-testid="ficha-continuar"]');
-    await expect(titulo(page)).toHaveText('Pontos fracos');
-    await page.check('[data-testid="ficha-dificuldade-nao-sei"] input');
-  }
 
   test('conta nova preenche os 4 passos e entra; recarregar não traz a ficha de volta', async ({ page }) => {
     await criarContaNaTela(page, 'Bia Nogueira');
@@ -749,7 +760,7 @@ test.describe('Ficha de boas-vindas', () => {
 
   test('gravação que falha mostra o erro e deixa tentar de novo, sem perder as respostas', async ({ page }) => {
     await criarContaNaTela(page, 'Rede Ruim');
-    await preencherAteOFim(page);
+    await preencherFichaAteOFim(page);
 
     // Um PUT recusado, e depois o servidor volta.
     let falhar = true;
@@ -773,9 +784,73 @@ test.describe('Ficha de boas-vindas', () => {
     expect((await lerProfileData(page))?.ficha?.concluidaEm).toBeTruthy();
   });
 
+  // O perfil falhou, o app abriu sem ele e a pessoa começou um quiz. Quando o
+  // perfil chega, a ficha não derruba a tela: espera a próxima troca de tela
+  // (e o sino avisa).
+  test('perfil que chega tarde não derruba o quiz: a ficha espera a troca de tela', async ({ page }) => {
+    let falhar = true;
+    await page.route(
+      (url) => url.pathname.startsWith('/api/users/'),
+      (rota) => (falhar && rota.request().method() === 'GET'
+        ? rota.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fora do ar' }) })
+        : rota.continue()),
+    );
+    await criarContaNaTela(page, 'Perfil Atrasado', { esperarFicha: false });
+
+    // Esgotadas as tentativas com tela de espera, o app abre como sempre.
+    await expect(page.locator('[data-testid="nav-questoes"]')).toBeVisible({ timeout: 15000 });
+    await page.click('[data-testid="nav-questoes"]');
+    await page.click('[data-testid="gerar-quiz"]');
+    await expect(page.locator('[data-testid="alt-0"]')).toBeVisible();
+
+    // O perfil volta (a busca segue por trás) — e o quiz continua na tela.
+    falhar = false;
+    await expect(page.locator('[data-testid="sino"]')).toBeVisible();
+    await page.click('[data-testid="sino"]');
+    await expect(page.locator('[data-testid="painel-notificacoes"]')).toContainText('Preencha sua ficha', { timeout: 15000 });
+    await expect(page.locator('[data-testid="alt-0"]')).toBeVisible();
+    await expect(page.locator('[data-testid="ficha"]')).toHaveCount(0);
+
+    // Na próxima troca de tela, a ficha.
+    await page.click('[data-testid="nav-dashboard"]');
+    await expect(page.locator('[data-testid="ficha"]')).toBeVisible();
+  });
+
+  // Duas abas na ficha; uma conclui. A outra, ao concluir, entra no app sem
+  // sobrescrever o que a primeira gravou.
+  test('a ficha concluída em outra aba não é sobrescrita', async ({ page, context }) => {
+    await criarContaNaTela(page, 'Duas Abas');
+    const outra = await context.newPage();
+    await outra.goto('/');
+    await expect(outra.locator('[data-testid="ficha"]')).toBeVisible({ timeout: 15000 });
+
+    // Aba 1: "já fiz mais de uma vez".
+    await expect(titulo(page)).toHaveText('Você');
+    await page.click('[data-testid="ficha-continuar"]');
+    await page.check('[data-testid="ficha-data-nao-sei"] input');
+    await page.check('[data-testid="ficha-ja-fez-mais-de-uma"] input');
+    await page.click('[data-testid="ficha-continuar"]');
+    await page.check('[data-testid="ficha-dia-2"] input');
+    await page.check('[data-testid="ficha-tempo-180"] input');
+    await page.click('[data-testid="ficha-continuar"]');
+    await page.check('[data-testid="ficha-dificuldade-nao-sei"] input');
+    await page.click('[data-testid="ficha-continuar"]');
+    await expect(titulo(page)).toHaveText('Tudo pronto!');
+
+    // Aba 2, que ainda mostrava a ficha, responde outra coisa e conclui.
+    await preencherFichaAteOFim(outra);
+    await outra.click('[data-testid="ficha-continuar"]');
+    await expect(outra.locator('[data-testid="nav-questoes"]')).toBeVisible();
+
+    const salvo = await lerProfileData(page);
+    expect(salvo.ficha.jaFez).toBe('mais-de-uma');
+    expect(salvo.ficha.minutosPorDia).toBe(180);
+    expect(salvo.meta).toBe(60);
+  });
+
   test('"Meu perfil de estudo" nas Configurações mostra e edita as respostas', async ({ page }) => {
     await criarContaNaTela(page, 'Edita Perfil');
-    await preencherAteOFim(page);
+    await preencherFichaAteOFim(page);
     await page.click('[data-testid="ficha-continuar"]');
     await page.click('[data-testid="ficha-entrar"]');
 
@@ -1215,7 +1290,8 @@ test.describe('Todas as telas', () => {
     await page.fill('#campo-senha', 'senha-de-teste-123');
     await page.fill('[data-testid="campo-confirmacao"]', 'senha-de-teste-123');
     await page.click('button[type="submit"]');
-    await passarDaFicha(page);
+    // Pela tela e sem recarregar: a troca de conta tem de acontecer nesta aba.
+    await passarDaFicha(page, { nome: 'Outra Pessoa' });
     await page.click('[data-testid="nav-anotacoes"]');
     await expect(page.locator('text=Crie uma com o botão')).toBeVisible();
     await expect(page.locator(`text=${texto}`)).toHaveCount(0);

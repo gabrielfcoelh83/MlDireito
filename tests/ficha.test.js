@@ -1,12 +1,13 @@
 // A ficha de boas-vindas e a gravação de `profile_data`.
 //
-// O risco que este arquivo cobre é silencioso: o user-service SUBSTITUI o
-// `profile_data` inteiro a cada PUT. Um PUT só com `{ meta, dataProva }`
-// apagava a ficha, e a pessoa voltava a vê-la no próximo acesso — sem erro
-// nenhum na tela. O servidor falso abaixo faz exatamente o que o de verdade
-// faz (substitui), e os PUT demoram tempos diferentes, para a ordem importar.
+// O user-service MESCLA o `profile_data` no primeiro nível (`profile_data ||
+// $3`): chave com null grava null, e o total mesclado tem teto de 20000
+// bytes. O front manda só as chaves que mudaram. O risco que este arquivo
+// cobre é silencioso: um PUT que reconstruísse o objeto inteiro a partir do
+// que uma aba desatualizada conhecia desfaria a ficha concluída em outra — e
+// a pessoa voltaria a vê-la no próximo acesso, sem erro nenhum na tela.
 
-import { criarFilaDePreferencias, mesclarPreferencias, PerfilDesconhecidoError } from '../src/lib/preferencias.js';
+import { criarFilaDePreferencias, configuracoesDoPerfil } from '../src/lib/preferencias.js';
 import {
   fichaConcluida, metaSugerida, metaValida, erroDoPasso, montarFicha, respostasIniciais,
   opcoesDeDificuldade, escolherTempo, DISCIPLINAS_OAB, rotuloDosDias, formatarData,
@@ -20,110 +21,143 @@ const exigir = (condicao, mensagem) => {
 };
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Servidor falso: `profile_data = COALESCE($3, profile_data)`, como o
-// user-service. Cada PUT leva o tempo da lista `demoras`, na ordem.
+// Servidor falso com a semântica do user-service: mescla no primeiro nível,
+// null grava null, 400 se não for objeto ou se o total passar de 20000 bytes.
+// Cada PUT leva o tempo da lista `demoras`, na ordem em que chega.
 function servidorFalso(inicial, demoras = []) {
   const srv = { profile_data: inicial, puts: [] };
   let n = 0;
-  srv.salvar = async (preferencias, extra) => {
+  srv.salvar = async (parcial, extra) => {
     const demora = demoras[n++] ?? 0;
-    srv.puts.push({ preferencias, extra });
+    srv.puts.push({ parcial, extra });
     await esperar(demora);
-    if (preferencias !== undefined) srv.profile_data = JSON.parse(JSON.stringify(preferencias));
+    if (parcial === null || typeof parcial !== 'object' || Array.isArray(parcial)) {
+      throw Object.assign(new Error('profile_data deve ser um objeto'), { status: 400 });
+    }
+    const mesclado = { ...(srv.profile_data || {}), ...parcial };
+    if (Buffer.byteLength(JSON.stringify(mesclado)) > 20000) {
+      throw Object.assign(new Error('profile_data grande demais'), { status: 400 });
+    }
+    srv.profile_data = JSON.parse(JSON.stringify(mesclado));
     return { name: extra?.nome ?? 'Nome', preferencias: srv.profile_data };
   };
   return srv;
 }
 
 const FICHA = { versao: 1, concluidaEm: '2026-09-20T10:00:00.000Z', fase: 'objetiva', jaFez: 'nao', diasDaSemana: [1, 3], minutosPorDia: 60, dificuldades: ['Direito Penal'] };
+const chaves = (o) => Object.keys(o).sort().join(',');
 
 // ---------------------------------------------------------------------------
 // Fila de profile_data
 // ---------------------------------------------------------------------------
 
-await (async () => {
-  exigir(JSON.stringify(mesclarPreferencias({ a: 1, ficha: FICHA }, { a: 2 })) === JSON.stringify({ a: 2, ficha: FICHA }), 'mesclar deveria manter as chaves que a mudança não traz');
-  exigir(JSON.stringify(mesclarPreferencias(null, { meta: 3 })) === '{"meta":3}', 'mesclar sobre nada deveria dar só a mudança');
-})();
-
-// Salvar a meta preserva a ficha.
+// Salvar a meta manda só meta e data, e preserva a ficha.
 await (async () => {
   const srv = servidorFalso({ meta: 20, dataProva: null, ficha: FICHA, outraChave: 'x' });
   const fila = criarFilaDePreferencias(srv.salvar);
-  fila.conhecer(srv.profile_data);
 
-  await fila.gravar({ meta: 7, dataProva: '2030-03-10' }, { extra: { id: 1 } });
-  exigir(srv.profile_data.meta === 7, 'a meta não foi gravada');
-  exigir(srv.profile_data.dataProva === '2030-03-10', 'a data da prova não foi gravada');
+  const resposta = await fila.gravar({ meta: 7, dataProva: '2030-03-10' }, { extra: { id: 1 } });
+  exigir(chaves(srv.puts[0].parcial) === 'dataProva,meta', `o PUT da meta deveria levar só meta e data, levou ${chaves(srv.puts[0].parcial)}`);
+  exigir(srv.profile_data.meta === 7 && srv.profile_data.dataProva === '2030-03-10', 'meta ou data não gravadas');
   exigir(srv.profile_data.ficha?.concluidaEm === FICHA.concluidaEm, 'salvar a meta APAGOU a ficha');
   exigir(srv.profile_data.outraChave === 'x', 'salvar a meta apagou uma chave que o front não conhece');
+  exigir(resposta?.preferencias?.ficha?.concluidaEm === FICHA.concluidaEm, 'a resposta (cópia da tela) deveria trazer o profile_data inteiro');
 })();
 
 // Salvar a ficha preserva meta, data e o resto.
 await (async () => {
   const srv = servidorFalso({ meta: 12, dataProva: '2031-01-05', tema: 'azul' });
   const fila = criarFilaDePreferencias(srv.salvar);
-  fila.conhecer(srv.profile_data);
 
-  const resposta = await fila.gravar({ ficha: FICHA }, { extra: { id: 1, nome: 'Ana' } });
+  await fila.gravar({ ficha: FICHA }, { extra: { id: 1, nome: 'Ana' } });
+  exigir(chaves(srv.puts[0].parcial) === 'ficha', 'o PUT da ficha deveria levar só a ficha');
   exigir(srv.profile_data.ficha?.concluidaEm === FICHA.concluidaEm, 'a ficha não foi gravada');
   exigir(srv.profile_data.meta === 12 && srv.profile_data.dataProva === '2031-01-05', 'salvar a ficha apagou meta ou data');
   exigir(srv.profile_data.tema === 'azul', 'salvar a ficha apagou uma chave que o front não conhece');
   exigir(srv.puts[0].extra.nome === 'Ana', 'o nome deveria ir no mesmo PUT da ficha');
-  exigir(resposta?.preferencias?.ficha != null, 'a fila deveria devolver a resposta do servidor');
 })();
 
-// Meta, ficha e meta em seguida, com o primeiro PUT mais lento que os outros:
-// cada um parte do que o anterior gravou, e nada se perde.
+// A aba desatualizada: a aba A conclui a ficha; a B, aberta antes e que nunca
+// soube dela, grava a meta depois. A ficha continua lá.
+await (async () => {
+  const srv = servidorFalso({ meta: 20 });
+  const abaA = criarFilaDePreferencias(srv.salvar);
+  const abaB = criarFilaDePreferencias(srv.salvar);
+  await abaA.gravar({ ficha: FICHA, meta: 30, dataProva: null }, { extra: { id: 1 } });
+  await abaB.gravar({ meta: 25, dataProva: '2030-01-01' }, { extra: { id: 1 } });
+  exigir(srv.profile_data.ficha?.concluidaEm === FICHA.concluidaEm, 'a aba desatualizada desfez a ficha da outra');
+  exigir(srv.profile_data.meta === 25, 'a meta da aba B deveria valer');
+})();
+
+// Gravações parciais em qualquer ordem de chegada preservam as outras chaves.
+await (async () => {
+  const gravacoes = [
+    { meta: 9, dataProva: '2030-05-05' },
+    { ficha: FICHA },
+    { tema: 'verde' },
+  ];
+  const ordens = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+  for (const ordem of ordens) {
+    // Cada gravação por uma fila própria (abas diferentes), chegando ao
+    // servidor na ordem da vez.
+    const demoras = [];
+    ordem.forEach((indice, posicao) => { demoras[indice] = posicao * 5; });
+    const srv = servidorFalso({ antiga: 1 }, demoras);
+    await Promise.all(gravacoes.map((g) => criarFilaDePreferencias(srv.salvar).gravar(g, { extra: { id: 1 } })));
+    const pd = srv.profile_data;
+    const ok = pd.meta === 9 && pd.dataProva === '2030-05-05' && pd.ficha?.concluidaEm === FICHA.concluidaEm && pd.tema === 'verde' && pd.antiga === 1;
+    exigir(ok, `na ordem ${ordem} alguma chave se perdeu: ${JSON.stringify(pd)}`);
+  }
+})();
+
+// Na mesma fila, a ordem é a de entrada, mesmo com o primeiro PUT mais lento.
 await (async () => {
   const srv = servidorFalso({ meta: 20 }, [40, 5, 0]);
   const fila = criarFilaDePreferencias(srv.salvar);
-  fila.conhecer(srv.profile_data);
-
   const a = fila.gravar({ meta: 8, dataProva: null }, { extra: { id: 1 } });
-  const b = fila.gravar({ ficha: FICHA, meta: 10, dataProva: '2030-01-01' }, { extra: { id: 1 } });
+  const b = fila.gravar({ ficha: FICHA }, { extra: { id: 1 } });
   const c = fila.gravar({ meta: 15, dataProva: '2030-01-01' }, { extra: { id: 1 } });
   await Promise.all([a, b, c]);
-
   exigir(srv.profile_data.meta === 15, `a última meta deveria valer, veio ${srv.profile_data.meta}`);
-  exigir(srv.profile_data.ficha?.concluidaEm === FICHA.concluidaEm, 'a meta gravada depois da ficha apagou a ficha');
-  exigir(srv.puts[1].preferencias.meta === 10, 'a ficha deveria sair depois da primeira meta, não junto');
-  exigir(srv.puts.length === 3, `deveriam ser 3 PUT, foram ${srv.puts.length}`);
+  exigir(srv.profile_data.ficha?.concluidaEm === FICHA.concluidaEm, 'a ficha se perdeu');
+  exigir(srv.puts.map((p) => chaves(p.parcial)).join('|') === 'dataProva,meta|ficha|dataProva,meta', 'os PUT saíram fora da ordem de entrada');
 })();
 
-// Sem saber o que o servidor tem, não grava: o PUT substituiria tudo.
+// `dataProva: null` grava null ("sem data"), e a tela lê assim.
 await (async () => {
-  const srv = servidorFalso({ ficha: FICHA });
+  const srv = servidorFalso({ meta: 5, dataProva: '2030-01-01', ficha: FICHA });
   const fila = criarFilaDePreferencias(srv.salvar);
-  let erro = null;
-  try { await fila.gravar({ meta: 5 }, { extra: { id: 1 } }); } catch (e) { erro = e; }
-  exigir(erro instanceof PerfilDesconhecidoError, 'sem profile_data conhecido deveria recusar');
-  exigir(srv.puts.length === 0, 'sem profile_data conhecido o PUT não pode sair');
-  exigir(srv.profile_data.ficha != null, 'a ficha sumiu');
+  const r = await fila.gravar({ meta: 5, dataProva: null }, { extra: { id: 1 } });
+  exigir('dataProva' in srv.profile_data && srv.profile_data.dataProva === null, 'dataProva null deveria ficar gravada como null');
+  exigir(configuracoesDoPerfil(r.preferencias, { meta: 1, dataProva: '2029-01-01' }).dataProva === null, 'dataProva null do servidor deveria apagar a local');
 })();
 
-// Sessão acabou antes da vez: não sai. Uma falha não trava os seguintes.
+// Recusa do servidor (400 por tamanho) chega a quem gravou e não trava a fila;
+// sessão encerrada antes da vez não manda nada.
 await (async () => {
   const srv = servidorFalso({ meta: 1 });
-  let chamadas = 0;
-  const fila = criarFilaDePreferencias(async (p, e) => {
-    chamadas += 1;
-    if (chamadas === 1) throw Object.assign(new Error('rede'), { status: 0 });
-    return srv.salvar(p, e);
-  });
-  fila.conhecer(srv.profile_data);
-
+  const fila = criarFilaDePreferencias(srv.salvar);
   let vivo = true;
-  const falha = fila.gravar({ meta: 2 }, { continuar: () => vivo, extra: { id: 1 } }).catch((e) => e);
+  const grande = fila.gravar({ lixo: 'x'.repeat(20001) }, { continuar: () => vivo, extra: { id: 1 } }).catch((e) => e);
   const depois = fila.gravar({ meta: 3 }, { continuar: () => vivo, extra: { id: 1 } });
-  exigir((await falha)?.message === 'rede', 'o erro do PUT deveria chegar a quem gravou');
+  exigir((await grande)?.status === 400, 'o 400 do servidor deveria chegar a quem gravou');
   exigir((await depois)?.preferencias?.meta === 3, 'a falha anterior não pode travar a fila');
+  exigir(!('lixo' in srv.profile_data), 'o PUT recusado não pode ter gravado nada');
 
   const parada = fila.gravar({ meta: 9 }, { continuar: () => vivo, extra: { id: 1 } });
   vivo = false;
   exigir((await parada) === null, 'com a sessão encerrada a vez deveria resolver null');
   exigir(srv.profile_data.meta === 3, 'o PUT de uma sessão encerrada saiu');
 })();
+
+{
+  // Chave ausente: nunca gravada, fica a local. Presente, o servidor manda.
+  const locais = { meta: 20, dataProva: '2029-09-09' };
+  const vazio = configuracoesDoPerfil({}, locais);
+  exigir(vazio.meta === 20 && vazio.dataProva === '2029-09-09', 'sem chaves no servidor, ficam as locais');
+  const cheio = configuracoesDoPerfil({ meta: 7, dataProva: '2030-03-10' }, locais);
+  exigir(cheio.meta === 7 && cheio.dataProva === '2030-03-10', 'com chaves, o servidor manda');
+}
 
 // ---------------------------------------------------------------------------
 // Ficha: regras dos passos

@@ -45,7 +45,7 @@ src/
     ├── agenda.js         # Plano da semana e calendário do Cronograma
     ├── perfil.js         # Payload do JWT, nome de exibição, saudação
     ├── ficha.js          # Ficha de boas-vindas: opções, validação dos passos, meta sugerida, montagem
-    ├── preferencias.js   # Fila dos PUT de profile_data, sempre com o objeto completo
+    ├── preferencias.js   # Fila dos PUT de profile_data (só as chaves que mudaram) e leitura de meta/data
     ├── navegacao.js      # Menu, fases (FASES), título/subtítulo das telas, ícones, tags
     ├── fundamentos.js    # 2ª fase: extrai citações legais e compara resposta × padrão da FGV
     ├── discursivas.js    # 2ª fase: agrupar por exame, "0,60", itens preenchidos
@@ -258,17 +258,32 @@ Não há tour nem checklist de primeiros passos.
 **Onde fica.** Em `profile_data`, no servidor: `meta` e `dataProva` são as de
 sempre (sem cópia), e `ficha = { versao: 1, concluidaEm, fase, jaFez,
 diasDaSemana, minutosPorDia, dificuldades }` (mais `atualizadaEm` quando
-editada). `diasDaSemana` usa o `getDay()` (0 = domingo). O nome vai no mesmo
-PUT.
+editada). `diasDaSemana` usa o `getDay()` (0 = domingo). O PUT leva só
+`{ meta, dataProva, ficha }` e o nome; o user-service mescla com o resto.
 
 **Obrigatória.** O `App` decide antes de qualquer tela, nas duas fases:
-perfil carregando → "Carregando seu perfil…"; perfil pronto sem
-`ficha.concluidaEm` → a ficha. Perfil que falha não bloqueia: depois de duas
-tentativas com a tela de espera o app abre como sempre abriu (nome vazio), e a
-busca continua por trás (`ESPERAS_DO_PERFIL`, até ~1 min) — quando o perfil
-vier, a ficha aparece se faltar. É o que cobre a conta recém-criada, cujo
-perfil nasce do evento `user.registered` um instante depois do cadastro e
-voltava 404 na primeira busca. 401 volta ao login, como o resto.
+perfil carregando → "Carregando seu perfil…" (com "Sair"); perfil pronto sem
+`ficha.concluidaEm` → a ficha. Cada busca do perfil tem 10 s de prazo
+(`tempoMaximoMs` do `req`, com `AbortController`) — sem ele, um servidor que
+aceita a conexão e não responde prendia a tela de espera. Perfil que falha
+não bloqueia: depois de duas tentativas com a tela de espera o app abre como
+sempre abriu (nome vazio), e a busca continua por trás (`ESPERAS_DO_PERFIL`,
+até ~1 min). É o que cobre a conta recém-criada, cujo perfil nasce do evento
+`user.registered` um instante depois do cadastro e voltava 404 na primeira
+busca. 401 volta ao login, como o resto.
+
+**Perfil que chega tarde** (depois de falhar, com o app já aberto) não troca a
+tela em uso pela ficha: ela fica adiada (`fichaAdiada`) até a próxima troca de
+tela — menu, aviso do sino ("Preencha sua ficha de boas-vindas") ou seletor de
+fase. Escolhido assim porque o simulado em andamento vive só no estado local
+de `Simulados.jsx`: sair da tela já o descarta (Pendência 15), então a troca
+de tela é o ponto em que não se perde nada que a pessoa não tenha largado.
+
+**Outra aba concluiu.** Antes de gravar a primeira conclusão, a ficha relê o
+perfil: se o servidor já tem `ficha.concluidaEm` (outra aba ou aparelho), a
+aba entra no app com a ficha de lá, sem sobrescrever. Não há sinal entre abas
+para o perfil (ele não fica no localStorage), então a aba só descobre ao
+concluir.
 
 Gravação que falha deixa a ficha no último passo com o erro e "Tentar de
 novo", sem perder as respostas; `fichaAberta` segura a ficha na tela depois
@@ -304,8 +319,9 @@ Meta diária e data da prova são o caso misto: ficam em
 `state.configuracoes` para a tela responder na hora, mas o servidor
 (`profile_data` do perfil) é a fonte da verdade: ao carregar o perfil, cada
 uma sobrescreve o valor local quando o perfil a traz. O `profile_data`
-inteiro fica em `perfil.preferencias` (a ficha é lida dali) e na fila de
-preferências (ver abaixo).
+inteiro fica em `perfil.preferencias` (a ficha é lida dali), atualizado pela
+resposta de cada PUT. `dataProva: null` gravado é "sem data"; chave ausente
+(nunca gravada) mantém o valor local (`configuracoesDoPerfil`).
 
 ```javascript
 const DEFAULT_STATE = {
@@ -394,17 +410,17 @@ grava o estado da interface (`salvarDadosDaConta`, em `storage.js`):
   (perfil, tentativas, acervo) fazem o mesmo com o `let cancelado` do efeito,
   que vira `true` quando `sessao` muda.
 - `filaDePreferencias` — fila de uma só para os PUT de `profile_data` (meta e
-  data da prova em `atualizarConfig`, a ficha em `salvarFicha`;
+  data da prova juntas em `atualizarConfig`, a ficha em `salvarFicha`;
   `lib/preferencias.js`): dois PUT soltos podem chegar fora de ordem e o mais
-  velho sobrescrever o mais novo. O user-service **substitui** o
-  `profile_data` inteiro (`COALESCE`, sem mesclar), então a fila guarda o
-  último `profile_data` que o servidor confirmou e todo PUT leva o objeto
-  completo, com a mudança por cima, lido na hora em que sai — um PUT só de
-  meta apagaria a ficha. Sem `profile_data` conhecido (perfil que não
-  carregou) não grava: a faixa de erro avisa. Um PUT que ainda esperava a vez
-  quando a sessão acabou não sai, e cada sessão tem a sua fila. O PUT do nome
-  pelas Configurações (`atualizarNome`) corre fora da fila e não manda
-  `profile_data`.
+  velho sobrescrever o mais novo. O user-service **mescla** o `profile_data`
+  no primeiro nível (`profile_data || $3`; null grava null; 400 se o total
+  passar de 20000 bytes), então cada PUT leva só as chaves que mudaram —
+  nunca o objeto reconstruído pela aba, que numa aba desatualizada desfaria a
+  edição feita em outra (a ficha concluída lá). A resposta, com o
+  `profile_data` inteiro, atualiza `perfil.preferencias`. Um PUT que ainda
+  esperava a vez quando a sessão acabou não sai, e cada sessão tem a sua
+  fila. O PUT do nome pelas Configurações (`atualizarNome`) corre fora da
+  fila e não manda `profile_data`.
 
 `encerrarSessao` é o fim de uma sessão — por "Sair", por 401 ou por token
 sem payload legível: sobe o `sessaoEpoch`, troca a fila de preferências, limpa o
@@ -465,7 +481,7 @@ erro do acervo aparece na própria tela de Questões, com botão de recarregar.
 |---|---|---|
 | `login`, `criarConta` | `POST /api/auth/login`, `/register` | o register já devolve token |
 | `entrarComGoogle` | `POST /api/auth/google` | manda o ID token do Google; o auth-service confere e devolve o JWT da plataforma, criando a conta na primeira vez |
-| `buscarPerfil`, `salvarPerfil` | `GET`/`PUT /api/users/:id` | nome e `profile_data` (o PUT substitui a coluna inteira: grave pela fila de preferências) |
+| `buscarPerfil`, `salvarPerfil` | `GET`/`PUT /api/users/:id` | nome e `profile_data` (o PUT mescla no 1º nível: mande só as chaves que mudaram, pela fila de preferências); o GET tem 10 s de prazo |
 | `listarTentativas` → `buscarPaginaDeTentativas` | `GET /api/tentativas?limite=1000&paginado=1[&offset=N]` | percorre as páginas até somar `total` (`percorrerPaginas`, teto de 50 páginas; passando dele, a lista vem cortada e o aviso vai só para o console), descarta repetidas pelo id, aceita o formato antigo (array) e agrupa por questão, em ordem cronológica. No `App`, a carga é mesclada com o que foi respondido enquanto ela corria (`mesclarTentativas`) |
 | `registrarTentativa` | `POST /api/tentativas` | |
 | `listarDiscursivas(area)` | `GET /api/discursivas?area=civil` | `[{id, exame, numero, area, resumo}]`; 404 (gateway sem a rota) vira acervo vazio na tela |
@@ -530,11 +546,11 @@ npm run dev
 | `npm run test:all` | test:e2e + test:api | nenhum workflow chama |
 | `npm run ci` | lint + test:lib + build — a verificação local, o mesmo que a CI roda sem backend | nenhum workflow chama |
 
-A ficha de boas-vindas é obrigatória, então o e2e a conclui pela API antes
-dos testes que não são sobre ela: `entrar` (usuário semeado) e
-`passarDaFicha` (conta criada pela tela) chamam `concluirFichaPelaApi`, que
-lê o perfil e grava o `profile_data` com a ficha por cima. Os testes do
-bloco "Ficha de boas-vindas" passam pela tela.
+A ficha de boas-vindas é obrigatória. No e2e, `entrar` a conclui pela API
+para o usuário semeado (`concluirFichaPelaApi`, PUT só de `{ ficha }`, uma vez
+por execução). Conta criada pela tela passa por ela pela tela, na mesma aba e
+sem recarregar (`passarDaFicha`): testes como a troca de conta e o nome que
+chega com atraso medem justamente o que acontece sem reload.
 
 O `e2e-backend.sh` semeia também `tests/e2e-discursivas.sql` (exame 99,
 textos reais do 43º e 44º Exame) — mas só se a tabela
@@ -617,9 +633,9 @@ mostrou um dia a menos no Brasil com a CI verde.
     todos os dias (o plano da semana não pula os dias sem estudo).
 17. **O servidor não valida a ficha** — `profile_data` é JSON livre no
     user-service; o formato é garantido só pelo front (`montarFicha`).
-18. **Meta ou data alteradas com o perfil fora do ar não gravam** — sem o
-    `profile_data` conhecido, um PUT apagaria a ficha; a faixa de erro avisa
-    e o valor volta ao do servidor quando o perfil carregar.
+18. **Aba parada na ficha não sabe que outra a concluiu** — o perfil não
+    passa entre abas; ela só descobre ao concluir (e aí entra sem
+    sobrescrever).
 
 ### Limpeza
 
