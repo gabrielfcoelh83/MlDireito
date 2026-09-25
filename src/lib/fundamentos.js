@@ -137,8 +137,10 @@ const RE_DETALHE = new RegExp(
   '(?:(?:e|ou)\\s+)?(?:'
   // "§ 1º a 3º", "§§ 1º e 2º": intervalo de parágrafos é detalhe do artigo,
   // nunca artigo novo — sem isto, "art. 1.228, § 1º a 3º" citava um art. 3.
-  + '§{1,2}\\s*\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*§?\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]))*'
-  + '|par[áa]grafos\\s+\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]))*'
+  // Número de parágrafo nunca é seguido de "." + dígito: em "§ 1º e 1.229",
+  // o "1" é o começo do art. 1.229, não um § 1º.
+  + '§{1,2}\\s*\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*§?\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]|\\.\\d))*'
+  + '|par[áa]grafos\\s+\\d+\\s*[º°o]?(?:\\s*(?:e|ou|,|a|at[ée])\\s*\\d+\\s*[º°o]?(?![\\p{L}\\d]|\\.\\d))*'
   + '|par[áa]grafo\\s+(?:[úu]nico|\\d+\\s*[º°o]?)'
   + '|p\\.\\s*[úu]\\.'
   + '|caput|in\\s+fine|parte\\s+final|(?:primeira|segunda)\\s+parte'
@@ -174,6 +176,8 @@ const RE_DEPOIS_DO_NUMERO = /(?:[º°o](?![\p{L}\d])|\s*-\s*[A-Z](?![\p{L}\d])|\
 // que vem depois é fim de frase, detalhe de artigo, outro diploma ou outro
 // artigo. "art. 186 do CC e 3, conforme…" e "…do CC e 2 dos réus" não são.
 const RE_DEPOIS_DO_NUMERO_POS_DIPLOMA = /(?:\s*[º°o](?![\p{L}\d]))?(?:\s*-\s*[A-Z](?![\p{L}\d]))?(?:\s*(?:[.;:)]|$)|[\s,]*(?:§|incisos?(?![\p{L}\d])|inc\.|caput|par[áa]grafo|[IVXLCDM]+(?![\p{L}\d]))|\s+(?:e|ou|a|at[ée]|c\/c)\s+(?:arts?\.?\s*|artigos?\s*)?\d)/uy;
+
+const RE_VIRGULA_OU_PARENTESE = /(?:\s*[º°o](?![\p{L}\d]))?\s*[,(]/uy;
 
 function lerNumero(texto, pos) {
   RE_NUMERO.lastIndex = pos;
@@ -214,7 +218,14 @@ function continuacao(texto, pos, re, depoisDoDiploma = false) {
   if (!cont[2]) {
     if (depoisDoDiploma) {
       RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.lastIndex = proximo.fim;
-      const ok = RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.test(texto) || diplomaAdiante(texto, proximo.fim);
+      // Vírgula ou parêntese logo depois ("…do CC e 927, sendo devida…",
+      // "…e 927 (responsabilidade)") só se o número tem cara de artigo: dois
+      // dígitos ou mais, ou sufixo. "…do CC e 3, conforme a doutrina" não.
+      RE_VIRGULA_OU_PARENTESE.lastIndex = proximo.fim;
+      const numeroDeArtigo = proximo.artigo.split('-')[0].length >= 2 || proximo.artigo.includes('-');
+      const ok = RE_DEPOIS_DO_NUMERO_POS_DIPLOMA.test(texto)
+        || diplomaAdiante(texto, proximo.fim)
+        || (numeroDeArtigo && RE_VIRGULA_OU_PARENTESE.test(texto));
       if (!ok) return null;
     } else {
       RE_DEPOIS_DO_NUMERO.lastIndex = proximo.fim;

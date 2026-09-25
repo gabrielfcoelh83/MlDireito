@@ -104,6 +104,21 @@ exigirChaves('art. 186 do CC e 2 dos réus', ['CC:186']);
 exigirChaves('art. 186 do CC e 927.', ['CC:186', 'CC:927']);
 exigirChaves('art. 186 do CC e 927, parágrafo único', ['CC:186', 'CC:927']);
 exigirChaves('art. 186 do CC e art. 2 dos réus', ['CC:186', 'CC:2']);
+// …mas vírgula ou parêntese depois de número com cara de artigo continua.
+exigirChaves('Com base no art. 186 do CC e 927, o réu indeniza.', ['CC:186', 'CC:927']);
+exigirChaves('art. 186 do CC e 927, sendo devida a indenização', ['CC:186', 'CC:927']);
+exigirChaves('art. 186 do CC e 927 (responsabilidade)', ['CC:186', 'CC:927']);
+exigirChaves('art. 1.228 do CC e 1.240-A, quanto à usucapião', ['CC:1228', 'CC:1240-A']);
+exigirChaves('art. 186 do CC e 3, conforme a doutrina', ['CC:186']);
+exigirChaves('art. 186 do CC e 3 (três) réus', ['CC:186']);
+// O "1" de "1.229" não é um § 1º.
+{
+  const cs = extrairCitacoes('art. 1.228, § 1º a 3º e 1.229 do CC');
+  exigir(igual(cs.map((c) => c.chave), ['CC:1228', 'CC:1229']), `"§ 1º a 3º e 1.229": ${JSON.stringify(cs.map((c) => c.chave))}`);
+  exigir(cs[0]?.detalhe === '§ 1º a 3º', `detalhe antes do 1.229: "${cs[0]?.detalhe}"`);
+}
+exigirChaves('art. 1.228, § 1º e 1.229 do CC', ['CC:1228', 'CC:1229']);
+exigirChaves('art. 1.228, §§ 1º e 2º, do CC', ['CC:1228']);
 // Sigla minúscula logo depois da preposição.
 exigirChaves('art. 186 do cc', ['CC:186']);
 exigirChaves('art. 319 do cpc', ['CPC:319']);
