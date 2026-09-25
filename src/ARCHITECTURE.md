@@ -360,6 +360,10 @@ mostrou um dia a menos no Brasil com a CI verde.
     cadastro por senha não confirma o e-mail, quem cadastrou o e-mail de
     outra pessoa impede o dono de entrar pelo Google (409), e não existe
     "esqueci a senha". O dono não é invadido, mas fica sem acesso.
+11. **`PATCH /api/tentativas/:id` sem uso** — o pop-up "como você chegou
+    nessa resposta?" saiu do quiz e era o único a gravar `tipo` e `certeza`.
+    A rota continua no estudo-service; as tentativas antigas mantêm os
+    valores, e nada na tela os lê.
 
 ### Limpeza
 
