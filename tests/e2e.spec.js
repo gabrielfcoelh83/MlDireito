@@ -854,6 +854,7 @@ const QUESTAO_DISCURSIVA = {
 async function simularDiscursivas(alvo, { lista = [], questao = null, falharGravacao = false, atrasoGravacaoMs = 0 } = {}) {
   const gravadas = [];
   const enviadas = [];
+  const consultas = { respostas: 0 };
 
   await alvo.route(/\/api\/discursivas(?:[/?]|$)/, async (rota) => {
     const pedido = rota.request();
@@ -869,6 +870,7 @@ async function simularDiscursivas(alvo, { lista = [], questao = null, falharGrav
         gravadas.unshift(linha);
         return rota.fulfill({ status: 201, json: linha });
       }
+      consultas.respostas += 1;
       return rota.fulfill({
         json: gravadas.filter((r) => String(r.questao_id) === url.searchParams.get('questao_id')),
       });
@@ -879,7 +881,7 @@ async function simularDiscursivas(alvo, { lista = [], questao = null, falharGrav
     return rota.fulfill({ status: 404, json: { error: 'Questão não encontrada' } });
   });
 
-  return { enviadas };
+  return { enviadas, consultas };
 }
 
 const RESUMO_DISCURSIVA = {
@@ -1057,6 +1059,27 @@ test.describe('2ª fase: questões discursivas', () => {
     // A remoção do rascunho chega pelo evento `storage`; a outra aba busca a
     // última resposta no servidor em vez de ficar com o campo vazio.
     await expect(outra.locator('[data-testid="sua-resposta-A"]')).toHaveText('Resposta escrita na primeira aba, art. 1.659 do CC.', { timeout: 5000 });
+  });
+
+  test('descartar o rascunho volta à última correção sem ir ao servidor', async ({ page }) => {
+    const { consultas } = await simularDiscursivas(page, { lista: [RESUMO_DISCURSIVA], questao: QUESTAO_DISCURSIVA });
+    await entrar(page);
+    await page.locator('[data-testid="seletor-fase"]').selectOption('discursiva-civil');
+    await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
+    await page.fill('[data-testid="resposta-A"]', 'Primeira, art. 1.659 do CC.');
+    await page.click('[data-testid="corrigir"]');
+    await expect(page.locator('[data-testid="resposta-salva"]')).toBeVisible();
+
+    await page.click('[data-testid="responder-de-novo"]');
+    await page.fill('[data-testid="resposta-A"]', 'Segunda, que vou descartar.');
+    // Espera a busca disparada pelo salvamento assentar antes de contar.
+    await page.waitForTimeout(500);
+    const antes = consultas.respostas;
+    await page.click('button:has-text("Descartar e ver a última correção")');
+
+    await expect(page.locator('[data-testid="sua-resposta-A"]')).toHaveText('Primeira, art. 1.659 do CC.');
+    await page.waitForTimeout(500);
+    expect(consultas.respostas).toBe(antes);
   });
 
   test('com o acervo semeado, a resposta vai para o servidor e volta ao reabrir', async ({ page }) => {

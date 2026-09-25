@@ -120,7 +120,9 @@ Vale a mais recente entre essa carga e a que o `App` gravou nesta sessão
 (`salvasNaSessao`, só em memória): reaberta com o POST no ar, a carga sai
 antes dele e viria vazia. Quando o rascunho some — salvo aqui ou noutra aba,
 que o apaga da chave da conta —, a questão aberta busca de novo a última
-resposta, sem esqueleto.
+resposta, sem esqueleto ("Descartar" não busca: nada foi salvo). As duas
+cargas se juntam por `maisRecente`, para a que voltar por último não trazer
+de volta uma resposta mais velha.
 Gravação recusada mostra o erro junto da resposta, com "Tentar de novo", e o
 rascunho continua salvo. Falha só na carga das respostas antigas não impede
 responder: um aviso diz que a última resposta não apareceu.
@@ -141,7 +143,9 @@ de resposta do 36º ao 45º Exame.
   ("§ 1º a 3º", "incisos I a III") é detalhe do artigo, não artigo novo.
   Depois de o diploma fechar o grupo, número sem "art." só continua se vier
   seguido de fim de frase, detalhe, outro diploma ou outro artigo ("do CC e
-  2 dos réus" não cita art. 2). Número sem "art."/"artigo"/"Súmula" antes não é citação.
+  2 dos réus" não cita art. 2) — ou de vírgula/parêntese, se o número tem
+  dois dígitos ou mais ("do CC e 927, o réu…" cita; "do CC e 3, conforme…"
+  não). Em "§ 1º e 1.229" o "1" é do art. 1.229, não um parágrafo. Número sem "art."/"artigo"/"Súmula" antes não é citação.
   Siglas em maiúsculas, ou minúsculas logo depois de "do/da/no/na" ("do
   cc"): solto no texto, "cf." não é Constituição.
 - Sem lookbehind nas expressões regulares nem `.at(-n)`: o primeiro é

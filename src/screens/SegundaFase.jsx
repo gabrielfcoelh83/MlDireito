@@ -291,10 +291,13 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
         // aviso diz que a última resposta não apareceu, em vez de fingir que
         // não existe.
         if (respostas.status === 'rejected') {
+          // Sem zerar a última: uma busca nova pode já tê-la trazido.
           setErroDasRespostas(mensagemDeErro(respostas.reason));
-          setUltimaDoServidor(null);
         } else {
-          setUltimaDoServidor(respostas.value[0] || null);
+          // `maisRecente`, e não o valor direto: a busca que o sumiço do
+          // rascunho dispara pode ter voltado antes desta carga, com uma
+          // resposta mais nova que a dela.
+          setUltimaDoServidor((atual) => maisRecente(atual, respostas.value[0] || null));
         }
         setCarga({ estado: 'pronto', questao: questao.value, erro: null });
       });
@@ -305,16 +308,21 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
   // O rascunho sumiu: a resposta foi salva — aqui, ou noutra aba, que apagou
   // o rascunho da chave da conta. Nesse segundo caso esta aba não sabe o que
   // foi salvo; busca de novo, sem esqueleto, só a última resposta.
+  // "Descartar" também apaga o rascunho, mas aí nada foi salvo: não busca.
   const tinhaRascunho = useRef(rascunho !== undefined);
+  const descartou = useRef(false);
   useEffect(() => {
     const tinha = tinhaRascunho.current;
     tinhaRascunho.current = rascunho !== undefined;
     if (!tinha || rascunho !== undefined) return undefined;
+    if (descartou.current) { descartou.current = false; return undefined; }
 
     let cancelado = false;
     listarRespostasDiscursivas(questaoId)
       .then((respostas) => {
-        if (!cancelado) setUltimaDoServidor((atual) => maisRecente(atual, respostas[0] || null));
+        if (cancelado) return;
+        setUltimaDoServidor((atual) => maisRecente(atual, respostas[0] || null));
+        setErroDasRespostas(null);
       })
       .catch((err) => {
         if (!cancelado && err.status === 401) sessaoExpirou();
@@ -478,7 +486,7 @@ function QuestaoAberta({ theme, s, questaoId, rascunho, setRascunho, voltar, gra
               Confere os artigos citados com o padrão de resposta e salva a sua resposta.
             </span>
             {ultima && rascunho !== undefined && (
-              <button type="button" onClick={() => setRascunho(undefined)} style={{ ...s.btnOutline }}>
+              <button type="button" onClick={() => { descartou.current = true; setRascunho(undefined); }} style={{ ...s.btnOutline }}>
                 Descartar e ver a última correção
               </button>
             )}
