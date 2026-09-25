@@ -114,6 +114,13 @@ exigirChaves('art. 186 do CC e 3 (três) réus', ['CC:186']);
 exigirChaves('art. 523 do CPC e 15 (quinze) dias', ['CPC:523']);
 exigirChaves('art. 186 do CC e 50 (cinquenta) mil reais', ['CC:186']);
 exigirChaves('art. 186 do CC e 10, conforme a doutrina', ['CC:186']);
+// Palavra que só começa como número por extenso não é quantidade.
+exigirChaves('art. 186 do CC e 187 (umbral)', ['CC:186', 'CC:187']);
+exigirChaves('art. 186 do CC e 44 (milícia)', ['CC:186', 'CC:44']);
+exigirChaves('art. 186 do CC e 200 (duzentos) reais', ['CC:186']);
+// Decisão registrada: depois do diploma, dois dígitos seguidos só de vírgula
+// não contam (o preço de barrar "e 10, conforme"); com "caput" contam.
+exigirChaves('art. 5º da CF e 37, conforme', ['CF:5']);
 exigirChaves('art. 186 do CC e 927, sendo devida a indenização', ['CC:186', 'CC:927']);
 // O "1" de "1.229" não é um § 1º.
 {

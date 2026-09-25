@@ -181,7 +181,7 @@ const RE_VIRGULA = /(?:\s*[º°o](?![\p{L}\d]))?\s*,/uy;
 const RE_PARENTESE = /(?:\s*[º°o](?![\p{L}\d]))?\s*\(/uy;
 // Número por extenso entre parênteses é quantidade, não artigo: "15 (quinze)
 // dias", "50 (cinquenta) mil reais".
-const RE_POR_EXTENSO = /(?:\s*[º°o](?![\p{L}\d]))?\s*\(\s*(?:um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzent|trezent|quatrocent|quinhent|seiscent|setecent|oitocent|novecent|mil)/iuy;
+const RE_POR_EXTENSO = /(?:\s*[º°o](?![\p{L}\d]))?\s*\(\s*(?:um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzent\p{L}*|trezent\p{L}*|quatrocent\p{L}*|quinhent\p{L}*|seiscent\p{L}*|setecent\p{L}*|oitocent\p{L}*|novecent\p{L}*|mil)(?![\p{L}])/iuy;
 
 function lerNumero(texto, pos) {
   RE_NUMERO.lastIndex = pos;
