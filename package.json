@@ -15,7 +15,8 @@
     "ci": "npm run lint && npm run test:lib && npm run build",
     "test:questoes": "node tests/questoes.test.js",
     "test:estado": "node tests/estado.test.js",
-    "test:paginas": "node tests/paginas.test.js"
+    "test:paginas": "node tests/paginas.test.js",
+    "test:ia": "node tests/ia.test.js"
   },
   "dependencies": {
     "axios": "^1.18.1",

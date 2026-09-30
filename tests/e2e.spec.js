@@ -311,28 +311,6 @@ test.describe('MA Questões E2E', () => {
     );
     expect(salvoLocal.usuarioTentativas).toBeUndefined();
   });
-
-  test('Gerar questões com IA (API)', async ({ page }) => {
-    // 1. Ir para Questões
-    await page.click('[data-testid="nav-questoes"]');
-    await page.waitForTimeout(500);
-
-    // 2. Procurar pelo componente GeradorQuestoes
-    const gerarButton = page.locator('button:has-text("Gerar")').first();
-    if (await gerarButton.isVisible()) {
-      // 3. Preencher tema
-      const temaInput = page.locator('input[placeholder*="tema"], input[placeholder*="Tema"]').first();
-      if (await temaInput.isVisible()) {
-        await temaInput.fill('Direitos Fundamentais');
-      }
-
-      // 4. Clicar em gerar
-      await gerarButton.click();
-
-      // 5. Aguardar resposta (10s max)
-      await page.waitForTimeout(3000);
-    }
-  });
 });
 
 // Fora do describe acima de propósito: aquele `beforeEach` entra com o usuário
