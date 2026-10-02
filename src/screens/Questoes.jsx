@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Icon } from '../lib/icons';
 import { embaralhar, montarFontes } from '../lib/questions/acervo';
-import { origemDaQuestao } from '../lib/simulado';
+import { alternarRisco, historicoDaQuestao } from '../lib/cardDeQuestao';
+import {
+  BotaoRiscar, GabaritoComentado, ListaDoHistorico, OrigemDaQuestao, SeloRespondida, TrilhaDaQuestao,
+} from '../components/ui/CardDeQuestao';
 
 const DIFICULDADE_COR = { 'Fácil': '#10B981', 'Média': '#F59E0B', 'Difícil': '#EF4444' };
 
@@ -41,8 +44,16 @@ function Aviso({ s, icone, cor, titulo, texto, acao }) {
   );
 }
 
-export default function Questoes({ theme, s, data, quest, setQuest, registrar, acervo, recarregarAcervo }) {
+export default function Questoes({ theme, s, data, quest, setQuest, registrar, acervo, recarregarAcervo, usuarioTentativas }) {
   const [tempoInicio, setTempoInicio] = useState(null);
+  // O que é só desta tela, para a questão aberta: as alternativas riscadas e
+  // o histórico aberto ou fechado. Guardado com o id da questão, e não em
+  // `quest` (que vai para o localStorage): riscar é rascunho de raciocínio,
+  // vale enquanto a questão está na tela e some ao trocar de questão —
+  // inclusive quando o quiz é montado de fora (Revisões, Disciplinas), sem
+  // passar por `startQuiz`. Comparar o id na leitura é o que zera sem efeito.
+  const [cartao, setCartao] = useState({ questaoId: null, riscadas: [], historicoAberto: false });
+  const idHistorico = useId();
 
   const all = data.QUESTOES || [];
   const estado = acervo?.estado || 'pronto';
@@ -110,8 +121,23 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
   const quizDone = !!quest.quiz && quest.done;
 
   let current = null, alternativas = [], dificuldadePill = {};
+  if (quizActive) current = quest.quiz[quest.idx];
+
+  const doCartao = current && cartao.questaoId === current.id ? cartao : { riscadas: [], historicoAberto: false };
+  const atualizarCartao = (mudanca) => setCartao({ ...doCartao, ...mudanca, questaoId: current.id });
+
+  // Riscar não responde nem seleciona: a alternativa riscada continua
+  // clicável e vale como resposta se a pessoa clicar nela. Travar o clique
+  // obrigaria a desfazer o risco antes de mudar de ideia — e o risco é só
+  // anotação visual.
+  const alternarRiscoDe = (i) => atualizarCartao({ riscadas: alternarRisco(doCartao.riscadas, i) });
+
+  // Tentativas anteriores desta questão, pelo id do acervo — a mesma chave que
+  // `registrar` usa. A resposta dada agora também entra assim que o servidor
+  // confirma: o selo passa a dizer a data de hoje, que é verdade.
+  const historico = current ? historicoDaQuestao(usuarioTentativas, current.id) : null;
+
   if (quizActive) {
-    current = quest.quiz[quest.idx];
     if (current?.dificuldade) {
       dificuldadePill = s.pill('#faf9fb', DIFICULDADE_COR[current.dificuldade] || '#8b8391');
     }
@@ -119,13 +145,14 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
     alternativas = (current?.alternativas || []).map((texto, i) => {
       const isCorrect = i === current.correta;
       const isSelected = i === quest.selectedAlt;
+      const riscada = doCartao.riscadas.includes(i);
       let bg = '#fff', border = '#e3e7ee', icon = null, show = false, radioBorder = '2px solid #cfd6e0';
       if (answered) {
         if (isCorrect) { bg = '#D1FAE5'; border = '#10B981'; icon = <Icon name="check" color="#10B981" size={18} />; show = true; radioBorder = '5px solid #10B981'; }
         else if (isSelected) { bg = '#FEE2E2'; border = '#EF4444'; icon = <Icon name="x" color="#EF4444" size={18} />; show = true; radioBorder = '5px solid #EF4444'; }
       }
       return {
-        texto, i, showIcon: show, icon, answered,
+        texto, i, showIcon: show, icon, answered, riscada,
         // O `--ordem` alimenta o atraso escalonado da entrada, e as duas cores
         // de foco alimentam o :hover — que mora no CSS porque objeto de estilo
         // inline não tem pseudo-classe. Escrever `':hover'` num style do React
@@ -283,14 +310,24 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
                 {/* Procedência real, vinda do acervo. O rótulo antigo era um
                     texto montado ("PROVA-FGV-BR/2023") que parecia um código
                     oficial sem ser um. */}
-                <span data-testid="origem-da-questao" style={{ fontSize: 11.5, color: '#8b93a1', fontWeight: 600, letterSpacing: '.3px', textTransform: 'uppercase' }}>
-                  {origemDaQuestao(current)}
+                <OrigemDaQuestao questao={current} />
+                <TrilhaDaQuestao s={s} theme={theme} questao={current} />
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <SeloRespondida
+                    s={s}
+                    theme={theme}
+                    historico={historico}
+                    aberto={doCartao.historicoAberto}
+                    onAlternar={() => atualizarCartao({ historicoAberto: !doCartao.historicoAberto })}
+                    idLista={idHistorico}
+                  />
+                  {current.dificuldade && <span style={dificuldadePill}>{current.dificuldade}</span>}
                 </span>
-                {current.disciplina && (
-                  <span data-testid="disciplina-da-questao" style={s.pill(theme.primarySoft, theme.primaryDark)}>{current.disciplina}</span>
-                )}
-                {current.dificuldade && <span style={{ ...dificuldadePill, marginLeft: 'auto' }}>{current.dificuldade}</span>}
               </div>
+              {/* Fechado por padrão: aberto antes de responder, ele mostra se
+                  as tentativas anteriores acertaram e com qual letra. Quem
+                  quer ver clica; quem não quer não leva o gabarito de brinde. */}
+              {doCartao.historicoAberto && historico?.total > 0 && <ListaDoHistorico historico={historico} id={idHistorico} />}
               <div data-testid="enunciado" style={{ fontSize: 15, color: '#2c2530', lineHeight: 1.65, marginTop: 16, whiteSpace: 'pre-wrap' }}>{current.enunciado}</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
@@ -304,9 +341,15 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
                     onClick={() => pickAlt(alt.i)}
                   >
                     <div style={alt.radioStyle} />
-                    <b style={{ fontSize: 13.5, color: '#8b8391', flex: 'none' }}>{String.fromCharCode(65 + alt.i)})</b>
-                    <div style={{ flex: 1, fontSize: 13.5 }}>{alt.texto}</div>
+                    <b style={{ fontSize: 13.5, color: '#8b8391', flex: 'none', opacity: alt.riscada ? 0.5 : 1 }}>{String.fromCharCode(65 + alt.i)})</b>
+                    <div
+                      data-riscada={alt.riscada ? 'sim' : 'nao'}
+                      style={{ flex: 1, fontSize: 13.5, textDecoration: alt.riscada ? 'line-through' : 'none', opacity: alt.riscada ? 0.5 : 1 }}
+                    >
+                      {alt.texto}
+                    </div>
                     {alt.showIcon && alt.icon}
+                    <BotaoRiscar theme={theme} indice={alt.i} riscada={alt.riscada} onAlternar={alternarRiscoDe} />
                   </div>
                 ))}
               </div>
@@ -328,23 +371,23 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
             {/* A explicação só existe depois de a pessoa responder — mostrar
                 antes entregaria a resposta. E ela vem com a etiqueta de quem
                 escreveu: enquanto o texto não passou por revisão humana, quem
-                lê precisa saber disso antes de decorar. */}
+                lê precisa saber disso antes de decorar. O bloco abre aberto e
+                pode ser recolhido; a `key` faz a questão seguinte abrir aberta
+                de novo. O prefixo não é enfeite: o bloco do enunciado, irmão
+                deste, já usa `current.id` como key, e duas chaves iguais entre
+                irmãos faziam o React deixar a questão anterior na tela. */}
             {quest.selectedAlt !== null && current.explicacao && (
-              <div className="entra" style={{ marginTop: 18, padding: 16, borderRadius: 12, background: '#faf9fb', border: '1px solid #eef0f4' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <Icon name="lightbulb" color="#F59E0B" size={16} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#2c2530' }}>Por que essa é a resposta</span>
-                  {!current.revisada && (
-                    <span data-testid="explicacao-nao-revisada" style={s.pill('#FEF3C7', '#B45309')}>
-                      {current.explicacaoFonte === 'ia' ? 'Gerada por IA · não revisada' : 'Não revisada'}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 13, color: '#5c5462', lineHeight: 1.6, marginTop: 10 }}>{current.explicacao}</div>
+              <GabaritoComentado
+                key={`gabarito-${current.id}`}
+                className="entra"
+                s={s}
+                questao={current}
+                style={{ marginTop: 18, padding: 16, borderRadius: 12, background: '#faf9fb', border: '1px solid #eef0f4' }}
+              >
                 <div style={{ fontSize: 11.5, color: '#8b8391', marginTop: 10 }}>
                   Gabarito oficial: alternativa {String.fromCharCode(65 + current.correta)}.
                 </div>
-              </div>
+              </GabaritoComentado>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>

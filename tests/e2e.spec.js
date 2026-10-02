@@ -1573,3 +1573,190 @@ test.describe('2ª fase: questões discursivas', () => {
     await expect(page.locator('[data-testid="sua-resposta-A"]')).toHaveText(texto);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Card de questão: procedência, tesoura, gabarito comentado e histórico
+// ---------------------------------------------------------------------------
+//
+// Acervo e histórico vêm da resposta simulada, não do seed: o seed não tem
+// disciplina nem tema (classificá-lo mudaria o agrupamento da barra para a
+// suíte inteira), e o histórico precisa de datas fixas para o selo
+// "Respondida em" ser verificável. O POST de tentativa também é simulado —
+// responder aqui gravaria, na conta compartilhada, tentativa de uma questão
+// que só existe nesta resposta.
+
+test.describe('Card de questão', () => {
+  const QUESTAO = {
+    id: 9301,
+    exame: 45,
+    tipo_prova: 1,
+    numero: 12,
+    banca: 'FGV',
+    ano: 2025,
+    enunciado: 'Questão de teste do card: controle de constitucionalidade.',
+    alternativas: ['c1 alternativa A', 'c1 alternativa B', 'c1 alternativa C', 'c1 alternativa D'],
+    gabarito: 1,
+    anulada: false,
+    disciplina: 'Direito Constitucional',
+    tema: 'Controle de constitucionalidade',
+    explicacao: 'Explicação de teste do card.',
+    explicacao_fonte: 'ia',
+    revisada: false,
+  };
+
+  // Como o estudo-service devolve: da mais recente para a mais antiga.
+  // 02:00 UTC do dia 1º/03 é 23:00 do dia 28/02 em São Paulo — o selo tem de
+  // dizer 28/02, qualquer que seja o fuso da máquina que roda o navegador.
+  const JA_RESPONDIDA = [
+    { id: 'e2e-card-2', questao_id: '9301', respondida_em: '2026-03-01T02:00:00.000Z', alternativa: 1, correta: true, tempo_seg: 40, tipo: null, certeza: null },
+    { id: 'e2e-card-1', questao_id: '9301', respondida_em: '2026-01-10T13:00:00.000Z', alternativa: 3, correta: false, tempo_seg: 55, tipo: null, certeza: null },
+  ];
+
+  // Monta as duas rotas e devolve a lista dos POSTs que a tela fez.
+  async function simularServidor(page, { historico = [], questoes = [QUESTAO] } = {}) {
+    const posts = [];
+    await page.route('**/api/questoes*', (rota) =>
+      rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(questoes) }));
+    await page.route('**/api/tentativas*', (rota) => {
+      if (rota.request().method() === 'POST') {
+        const corpo = rota.request().postDataJSON();
+        posts.push(corpo);
+        return rota.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ id: `e2e-card-novo-${posts.length}`, ...corpo, respondida_em: new Date().toISOString() }),
+        });
+      }
+      return rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(historico) });
+    });
+    return posts;
+  }
+
+  async function abrirQuiz(page) {
+    await page.click('[data-testid="nav-questoes"]');
+    await page.click('[data-testid="gerar-quiz"]');
+    await expect(page.locator('[data-testid="enunciado"]')).toHaveText(QUESTAO.enunciado);
+  }
+
+  test('cabeçalho mostra exame, ano, banca, número e a trilha Disciplina › Tema', async ({ page }) => {
+    await simularServidor(page);
+    await entrar(page);
+    await abrirQuiz(page);
+
+    await expect(page.locator('[data-testid="origem-da-questao"]')).toHaveText('45º Exame · 2025 · FGV · Questão 12');
+    await expect(page.locator('[data-testid="disciplina-da-questao"]')).toHaveText('Direito Constitucional');
+    await expect(page.locator('[data-testid="tema-da-questao"]')).toHaveText('Controle de constitucionalidade');
+    await expect(page.locator('[data-testid="trilha-da-questao"]')).toContainText('›');
+    // Nunca respondida: sem selo nem botão de histórico.
+    await expect(page.locator('[data-testid="respondida-em"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="ver-historico"]')).toHaveCount(0);
+  });
+
+  test('riscar alterna o risco e não responde; a riscada continua respondível', async ({ page }) => {
+    const posts = await simularServidor(page);
+    await entrar(page);
+    await abrirQuiz(page);
+
+    const tesoura = page.locator('[data-testid="riscar-1"]');
+    const textoB = page.locator('[data-testid="alt-1"] [data-riscada]');
+    await expect(tesoura).toHaveAttribute('aria-pressed', 'false');
+    await expect(tesoura).toHaveAttribute('aria-label', 'Riscar alternativa B');
+
+    await tesoura.click();
+    await expect(tesoura).toHaveAttribute('aria-pressed', 'true');
+    await expect(tesoura).toHaveAttribute('aria-label', 'Desfazer risco da alternativa B');
+    await expect(textoB).toHaveAttribute('data-riscada', 'sim');
+    await expect(textoB).toHaveCSS('text-decoration-line', 'line-through');
+
+    // Riscar não é responder: sem veredito, alternativas ainda clicáveis e
+    // nenhum POST de tentativa.
+    await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="alt-1"]')).toHaveAttribute('data-clicavel', 'sim');
+    await expect(page.locator('[data-testid="proxima-questao"]')).toBeDisabled();
+    expect(posts).toHaveLength(0);
+
+    // Alterna: o segundo clique desfaz.
+    await tesoura.click();
+    await expect(tesoura).toHaveAttribute('aria-pressed', 'false');
+    await expect(textoB).toHaveAttribute('data-riscada', 'nao');
+
+    // Riscada de novo, e respondida pelo texto: o risco é só visual.
+    await tesoura.click();
+    await page.click('[data-testid="alt-1"] [data-riscada]');
+    await expect(page.locator('[data-testid="veredito"]')).toHaveText('Acertou!');
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ questao_id: '9301', alternativa: 1, correta: true });
+
+    // Gabarito comentado: abre aberto, com o selo; recolhe e reabre, e o selo
+    // fica no cabeçalho mesmo recolhido.
+    const alternar = page.locator('[data-testid="alternar-gabarito"]');
+    const selo = page.locator('[data-testid="explicacao-nao-revisada"]');
+    await expect(alternar).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-testid="gabarito-comentado-texto"]')).toContainText(QUESTAO.explicacao);
+    await expect(selo).toHaveText('Gerada por IA · não revisada');
+    await alternar.click();
+    await expect(alternar).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-testid="gabarito-comentado-texto"]')).toHaveCount(0);
+    await expect(selo).toBeVisible();
+    await alternar.click();
+    await expect(page.locator('[data-testid="gabarito-comentado-texto"]')).toBeVisible();
+  });
+
+  // O risco não persiste: é da questão na tela. E trocar de questão com o
+  // gabarito comentado aberto já deixou o card anterior no DOM (duas `key`
+  // iguais entre irmãos) — o quiz mostrava duas questões ao mesmo tempo.
+  test('trocar de questão zera os riscos e não deixa a anterior na tela', async ({ page }) => {
+    const OUTRA = { ...QUESTAO, id: 9302, numero: 13, enunciado: 'Segunda questão de teste do card.', alternativas: ['c2 A', 'c2 B', 'c2 C', 'c2 D'] };
+    await simularServidor(page, { questoes: [QUESTAO, OUTRA] });
+    await entrar(page);
+    await page.click('[data-testid="nav-questoes"]');
+    await page.click('[data-testid="gerar-quiz"]');
+
+    const enunciado = page.locator('[data-testid="enunciado"]');
+    await expect(enunciado).toHaveCount(1);
+    const primeiro = await enunciado.innerText();
+
+    await page.click('[data-testid="riscar-0"]');
+    await page.click('[data-testid="riscar-2"]');
+    await expect(page.locator('[data-testid^="riscar-"][aria-pressed="true"]')).toHaveCount(2);
+    await page.click('[data-testid="alt-1"]');
+    await expect(page.locator('[data-testid="gabarito-comentado"]')).toBeVisible();
+
+    await page.click('[data-testid="proxima-questao"]');
+    await expect(enunciado).toHaveCount(1);
+    await expect(enunciado).not.toHaveText(primeiro);
+    await expect(page.locator('[data-testid^="riscar-"][aria-pressed="true"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="alt-0"] [data-riscada]')).toHaveAttribute('data-riscada', 'nao');
+  });
+
+  test('questão já respondida mostra "Respondida em" e o histórico', async ({ page }) => {
+    const posts = await simularServidor(page, { historico: JA_RESPONDIDA });
+    await entrar(page);
+    await abrirQuiz(page);
+
+    await expect(page.locator('[data-testid="respondida-em"]')).toHaveText('Respondida em 28/02/2026');
+
+    // Fechado por padrão: aberto, ele entregaria o gabarito antes da resposta.
+    const botao = page.locator('[data-testid="ver-historico"]');
+    await expect(botao).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-testid="historico-da-questao"]')).toHaveCount(0);
+
+    await botao.click();
+    await expect(botao).toHaveAttribute('aria-expanded', 'true');
+    const itens = page.locator('[data-testid="historico-item"]');
+    await expect(itens).toHaveCount(2);
+    await expect(itens.nth(0)).toContainText('28/02/2026');
+    await expect(itens.nth(0)).toContainText('Marcou B');
+    await expect(itens.nth(0)).toContainText('Acertou');
+    await expect(itens.nth(1)).toContainText('10/01/2026');
+    await expect(itens.nth(1)).toContainText('Marcou D');
+    await expect(itens.nth(1)).toContainText('Errou');
+
+    // Abrir o histórico também não responde nada.
+    await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
+    expect(posts).toHaveLength(0);
+
+    await botao.click();
+    await expect(page.locator('[data-testid="historico-da-questao"]')).toHaveCount(0);
+  });
+});

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Icon } from '../lib/icons';
 import { ICONE_POR_DISCIPLINA } from '../lib/navegacao';
-import { corrigirSimulado, origemDaQuestao, situacaoDaResposta, sortearQuestoes, tempoDeProvaMinutos } from '../lib/simulado';
+import { corrigirSimulado, situacaoDaResposta, sortearQuestoes, tempoDeProvaMinutos } from '../lib/simulado';
 import ConfigSimulado from '../components/ui/ConfigSimulado';
 import Cronometro from '../components/ui/Cronometro';
+import { GabaritoComentado, OrigemDaQuestao, TrilhaDaQuestao } from '../components/ui/CardDeQuestao';
 
 const LETRA = (i) => String.fromCharCode(65 + i);
 
@@ -339,13 +340,14 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
               <span style={{ background: theme.primarySoft, color: theme.primaryDark, fontWeight: 700, fontSize: 12.5, padding: '5px 14px', borderRadius: 8 }}>
                 Questão {i + 1}
               </span>
-              {/* Procedência real (exame, número, banca) — a mesma do quiz. */}
-              <span data-testid="origem-da-questao" style={{ fontSize: 11.5, color: '#8b93a1', fontWeight: 600, letterSpacing: '.3px', textTransform: 'uppercase' }}>
-                {origemDaQuestao(q)}
-              </span>
-              {q.disciplina && simulado.tipo === 'geral' && (
-                <span style={{ ...s.pill(theme.primarySoft, theme.primaryDark), marginLeft: 'auto' }}>{q.disciplina}</span>
-              )}
+              {/* Procedência real (exame, ano, banca, número) e a trilha
+                  "Disciplina › Tema" — os mesmos do quiz. Nada aqui entrega
+                  gabarito: a prova continua sem correção até o fim. A
+                  disciplina antes só aparecia no simulado geral (no por
+                  matéria é a mesma em todas); a trilha aparece nos dois porque
+                  o tema muda de questão para questão. */}
+              <OrigemDaQuestao questao={q} />
+              <TrilhaDaQuestao s={s} theme={theme} questao={q} style={{ marginLeft: 'auto' }} />
             </div>
 
             <div style={{ fontSize: 14.5, color: '#2c2530', lineHeight: 1.65, margin: '16px 0', whiteSpace: 'pre-wrap' }}>{q.enunciado}</div>
@@ -499,8 +501,8 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
                     <Icon name={sit.icone} color={sit.cor} size={18} />
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#2c2530' }}>Questão {i + 1}</span>
                     <span style={{ fontSize: 11.5, color: sit.cor, fontWeight: 700 }}>{sit.rotulo}</span>
-                    <span style={{ fontSize: 11, color: '#8b93a1', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.3px' }}>{origemDaQuestao(q)}</span>
-                    {q.disciplina && <span style={{ ...s.pill('#fff', '#5c5462'), marginLeft: 'auto' }}>{q.disciplina}</span>}
+                    <OrigemDaQuestao questao={q} style={{ fontSize: 11 }} />
+                    <TrilhaDaQuestao s={s} theme={theme} questao={q} pill={s.pill('#fff', '#5c5462')} style={{ marginLeft: 'auto' }} />
                   </div>
                   <div style={{ fontSize: 13, color: '#5c5462', marginTop: 8, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{q.enunciado}</div>
 
@@ -528,21 +530,17 @@ export default function Simulados({ theme, s, data, sim, setSim, setResultadosHi
                     })}
                   </div>
 
-                  {/* Mesma etiqueta do quiz: explicação que não passou por
-                      revisão humana é avisada antes de a pessoa decorar. */}
+                  {/* O mesmo gabarito comentado do quiz, com a mesma etiqueta:
+                      explicação que não passou por revisão humana é avisada
+                      antes de a pessoa decorar. Abre aberto, como antes; cada
+                      questão recolhe o seu sem mexer nas outras. */}
                   {q.explicacao && (
-                    <div style={{ fontSize: 12.5, color: '#5c5462', marginTop: 10, padding: 12, background: '#fff', borderRadius: 8, lineHeight: 1.55 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                        <Icon name="lightbulb" color="#F59E0B" size={15} />
-                        <b style={{ color: '#2c2530' }}>Por que essa é a resposta</b>
-                        {!q.revisada && (
-                          <span data-testid="explicacao-nao-revisada" style={s.pill('#FEF3C7', '#B45309')}>
-                            {q.explicacaoFonte === 'ia' ? 'Gerada por IA · não revisada' : 'Não revisada'}
-                          </span>
-                        )}
-                      </div>
-                      {q.explicacao}
-                    </div>
+                    <GabaritoComentado
+                      s={s}
+                      questao={q}
+                      compacto
+                      style={{ marginTop: 10, padding: 12, background: '#fff', borderRadius: 8 }}
+                    />
                   )}
                 </div>
               );
