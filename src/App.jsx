@@ -1149,7 +1149,11 @@ export default function App() {
           </div>
         </div>
 
-        <div style={s.content}>
+        {/* O dock do Kepy flutua no canto de baixo (52px de barra + 24px de
+            margem). Sem este respiro no fim, o que mora no rodapé da tela —
+            "Anterior"/"Próxima" do quiz, por exemplo — ficava embaixo dele,
+            sem como rolar para fora. */}
+        <div style={{ ...s.content, paddingBottom: 104 }}>
           {faixaDeErro}
           {/* `key` na tela: a entrada escalonada (`.tela` no index.css) toca a cada
               navegação e não a cada render. */}
