@@ -125,6 +125,28 @@ async function entrar(page) {
   await expect(page.locator('[data-testid="nav-questoes"]')).toBeVisible();
 }
 
+// "Sair" fica dentro do menu da conta, no rodapé da barra lateral.
+async function sairPeloMenu(page) {
+  await page.click('[data-testid="menu-conta"]');
+  await page.click('[data-testid="sair"]');
+}
+
+// O quiz é em formato de prova: clicar só marca, e o gabarito (e a gravação)
+// vêm ao finalizar, a partir da tela de revisão. Daqui dá para finalizar de
+// qualquer questão.
+async function finalizarQuiz(page) {
+  await page.click('[data-testid="revisar-respostas"]');
+  await expect(page.locator('[data-testid="tela-revisao"]')).toBeVisible();
+  await page.click('[data-testid="finalizar-quiz"]');
+  await expect(page.locator('text=Quiz concluído!')).toBeVisible();
+}
+
+// Abre a correção de uma posição do quiz já finalizado.
+async function verCorrecao(page, pos = 0) {
+  await page.click(`[data-testid="corrigir-${pos}"]`);
+  await expect(page.locator('[data-testid="veredito"]')).toBeVisible();
+}
+
 test.describe('MA Questões E2E', () => {
   test.beforeEach(async ({ page }) => {
     await entrar(page);
@@ -135,13 +157,15 @@ test.describe('MA Questões E2E', () => {
     await page.click('[data-testid="nav-questoes"]');
     await expect(page).toHaveTitle(/quest/i);
 
-    // 2. As fontes vêm do acervo do servidor, não de uma lista fixa no front:
-    //    enquanto as questões não têm disciplina, elas são agrupadas por
-    //    exame. Esperar a primeira aparecer é esperar o GET /api/questoes.
-    const primeiraFonte = page.locator('[data-testid^="fonte-"]').first();
-    await expect(primeiraFonte).toBeVisible();
-
-    await page.click('[data-testid="gerar-quiz"]');
+    // 2. O botão só aparece com o acervo do servidor carregado: esperar por
+    //    ele é esperar o GET /api/questoes. O quiz tem o tamanho da meta do
+    //    dia: o botão diz quantas questões vêm, e é isso que o laço abaixo
+    //    tem de responder.
+    const gerar = page.locator('[data-testid="gerar-quiz"]');
+    await expect(gerar).toBeVisible();
+    const noQuiz = Number((await gerar.innerText()).match(/\((\d+)/)?.[1]);
+    expect(noQuiz).toBeGreaterThan(0);
+    await gerar.click();
 
     // 3. Responder o quiz inteiro, avançando pelo botão de próxima questão.
     //
@@ -161,6 +185,12 @@ test.describe('MA Questões E2E', () => {
     });
     expect(noAcervo).toBeGreaterThan(0);
 
+    // Cada questão custa três passos (marcar, conferir a marcação, avançar)
+    // mais a entrada animada das alternativas — medido, ~0,7 s por questão sem
+    // o servidor real. O quiz é do tamanho da meta, mas o prazo acompanha o
+    // acervo, o teto possível, com folga para a rede.
+    test.setTimeout(30_000 + noAcervo * 1_500);
+
     let respondidas = 0;
 
     // O teto é uma trava contra laço infinito, não a quantidade esperada.
@@ -169,13 +199,19 @@ test.describe('MA Questões E2E', () => {
       if (!(await alternativa.isVisible())) break;
 
       await alternativa.click();
+      await expect(alternativa).toHaveAttribute('data-marcada', 'sim');
       respondidas++;
 
-      await expect(page.locator('[data-testid="veredito"]')).toBeVisible();
+      // Sem gabarito durante o quiz: ele só aparece depois de finalizar.
+      await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
       await page.click('[data-testid="proxima-questao"]');
     }
 
-    expect(respondidas).toBe(noAcervo);
+    // O "Próximo" da última questão abre a revisão, e é dela que se finaliza.
+    expect(respondidas).toBe(noQuiz);
+    expect(noQuiz).toBeLessThanOrEqual(noAcervo);
+    await expect(page.locator('[data-testid="tela-revisao"]')).toBeVisible();
+    await page.click('[data-testid="finalizar-quiz"]');
     await expect(page.locator('text=Quiz concluído!')).toBeVisible();
 
     // 4. Ir para Desempenho
@@ -243,10 +279,10 @@ test.describe('MA Questões E2E', () => {
     await page.click('[data-testid="nav-questoes"]');
     await page.waitForTimeout(500);
 
-    // 2. Mexer na seleção de fontes — é o que este teste persiste
-    const primeiraFonte = page.locator('[data-testid^="fonte-"]').first();
-    await expect(primeiraFonte).toBeVisible();
-    await primeiraFonte.click();
+    // 2. Abrir um quiz — é o que este teste persiste
+    const gerar = page.locator('[data-testid="gerar-quiz"]');
+    await expect(gerar).toBeVisible();
+    await gerar.click();
     await page.waitForTimeout(300);
 
     // 3. Salvar estado antes de refresh
@@ -286,6 +322,8 @@ test.describe('MA Questões E2E', () => {
     const alternativa = page.locator('[data-testid="alt-0"]');
     await expect(alternativa).toBeVisible();
     await alternativa.click();
+    // Marcar é rascunho; quem grava é o finalizar.
+    await finalizarQuiz(page);
 
     // poll em vez de timeout fixo: espera o POST que a tela disparou, sem
     // inventar um número de milissegundos que ora sobra, ora falta.
@@ -442,30 +480,33 @@ test.describe('Acervo vindo do servidor', () => {
     // usasse outro índice — o erro que a tradução gabarito→correta pode
     // introduzir — o app diria "Errou" para a resposta oficialmente correta.
     await alternativas.nth(casada.gabarito).click();
-    await expect(page.locator('text=Acertou!')).toBeVisible();
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
+    await expect(page.locator('[data-testid="veredito"]')).toHaveText(/Acertou!/);
   });
 
-  test('explicação não revisada aparece etiquetada como tal', async ({ page }) => {
+  test('explicação da IA aparece assinada pelo assistente', async ({ page }) => {
     await page.click('[data-testid="nav-questoes"]');
     await page.click('[data-testid="gerar-quiz"]');
 
     // O acervo de teste tem uma questão com explicação gerada por IA e não
-    // revisada. O quiz é embaralhado, então o teste avança até chegar nela.
-    for (let i = 0; i < 12; i++) {
-      const alternativa = page.locator('[data-testid="alt-0"]');
-      if (!(await alternativa.isVisible())) break;
-      await alternativa.click();
-
-      const etiqueta = page.locator('[data-testid="explicacao-nao-revisada"]');
+    // revisada. O quiz é embaralhado, então o teste avança pela correção até
+    // chegar nela — finalizar em branco já abre o gabarito de todas.
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
+    for (let i = 0; i < 200; i++) {
+      const etiqueta = page.locator('[data-testid="explicacao-do-assistente"]');
       if (await etiqueta.isVisible()) {
-        await expect(etiqueta).toContainText('não revisada');
+        await expect(etiqueta).toContainText('Comentado pelo Kepy');
         return;
       }
 
-      await page.click('[data-testid="proxima-questao"]');
+      const proxima = page.locator('[data-testid="proxima-questao"]');
+      if ((await proxima.innerText()).includes('Voltar ao resultado')) break;
+      await proxima.click();
     }
 
-    throw new Error('nenhuma questão com explicação não revisada apareceu no quiz');
+    throw new Error('nenhuma questão com explicação da IA apareceu no quiz');
   });
 
   test('acervo fora do ar vira aviso com botão, não tela vazia', async ({ page }) => {
@@ -870,6 +911,8 @@ test.describe('Revisões', () => {
 
     const enunciado = await page.locator('[data-testid="enunciado"]').innerText();
     await page.click('[data-testid="alt-0"]');
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
 
     // A própria tela diz se foi acerto ou erro; o teste não precisa conhecer o
     // gabarito do acervo de teste para saber onde a questão deve aparecer.
@@ -900,7 +943,8 @@ test.describe('Revisões', () => {
     await page.click('[data-testid="gerar-quiz"]');
     await expect(page.locator('[data-testid="alt-0"]')).toBeVisible();
     await page.click('[data-testid="alt-0"]');
-    await expect(page.locator('[data-testid="veredito"]')).toBeVisible();
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
 
     await page.click('[data-testid="nav-revisoes"]');
     await page.click('[data-testid="aba-menor"]');
@@ -957,6 +1001,8 @@ test.describe('Foco do dia', () => {
 
     await entrar(page);
 
+    // O foco do dia mora no guia do Kepy, no dock do canto da tela.
+    await page.click('[data-testid="kepy-guia"]');
     const foco = page.locator('[data-testid="foco-do-dia"]');
     await expect(foco).toBeVisible();
 
@@ -974,33 +1020,48 @@ test.describe('Foco do dia', () => {
     await expect(page.locator('[data-testid="disciplina-da-questao"]')).toHaveText('Ética Profissional');
   });
 
-  test('no dashboard o cartão encolhe, porque o card "Próximo passo" já diz o mesmo', async ({ page }) => {
+  test('o Kepy acompanha todas as telas, mostra a meta e fecha com Esc', async ({ page }) => {
     await page.route('**/api/questoes*', (rota) =>
       rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ACERVO) }));
 
     await entrar(page);
-    const foco = page.locator('[data-testid="foco-do-dia"]');
+    const guia = page.locator('[data-testid="kepy-guia"]');
+    const painel = page.locator('[data-testid="painel-kepy"]');
 
-    // No dashboard fica só o caminho: o motivo já está no card central, com
-    // mais espaço, e repeti-lo na mesma tela é ruído.
-    // O rótulo alterna entre "Estudar X" e "Continuar em X" conforme a meta
-    // do dia, e a suíte inteira compartilha a mesma conta — fixar uma das
-    // variantes deixa o teste refém da ordem de execução.
-    const rotulo = /(?:Estudar|Continuar em) Ética Profissional/;
-    const noDashboard = (await foco.innerText()).trim();
-    expect(noDashboard).toMatch(rotulo);
-
-    // Fora dele o cartão volta inteiro — ali não há card nenhum dizendo isso.
+    // Fora do dashboard ele continua ali — era o motivo de o cartão viver na
+    // barra lateral, que acompanha todas as telas.
     await page.click('[data-testid="nav-revisoes"]');
-    const foraDoDashboard = (await foco.innerText()).trim();
-    expect(foraDoDashboard).toMatch(rotulo);
+    await guia.click();
+    await expect(painel).toBeVisible();
 
-    // Comparar o tamanho, e não uma frase: o motivo muda com o progresso do
-    // dia — "Comece por X" antes da primeira questão, "Faltam N em X" depois —
-    // e os testes da suíte dividem a mesma conta. O que a mudança faz é a
-    // linha do motivo sumir no dashboard, e é isso que se verifica.
-    expect(foraDoDashboard.length, 'fora do dashboard o cartão traz o motivo')
-      .toBeGreaterThan(noDashboard.length);
+    // O número da meta é o mesmo "N/M" do status da barra. A suíte divide a
+    // conta, então o valor exato depende da ordem: confere o formato.
+    await expect(page.locator('[data-testid="kepy-meta"]')).toHaveText(/^\d+\/\d+$/);
+    await expect(page.locator('[data-testid="foco-do-dia"]')).toHaveText(/(?:Estudar|Continuar em) Ética Profissional/);
+
+    await page.keyboard.press('Escape');
+    await expect(painel).toBeHidden();
+    await expect(guia).toBeFocused();
+  });
+
+  test('na conversa, o Kepy entende a matéria e abre o quiz dela', async ({ page }) => {
+    await page.route('**/api/questoes*', (rota) =>
+      rota.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ACERVO) }));
+
+    await entrar(page);
+
+    // K abre a conversa fora de campo de texto (A–E ficam com o quiz).
+    await page.keyboard.press('k');
+    const campo = page.locator('[data-testid="kepy-mensagem"]');
+    await expect(campo).toBeFocused();
+
+    await campo.fill('quero fazer ética');
+    await page.keyboard.press('Enter');
+
+    const acao = page.locator('[data-testid="painel-kepy"] [data-testid="foco-do-dia"]').last();
+    await expect(acao).toHaveText(/(?:Estudar|Continuar em) Ética Profissional/);
+    await acao.click();
+    await expect(page.locator('[data-testid="disciplina-da-questao"]')).toHaveText('Ética Profissional');
   });
 });
 
@@ -1072,7 +1133,7 @@ test.describe('Simulado por matéria', () => {
 
     await expect(page.locator('[data-testid="nota-final"]')).toHaveText('0%');
     await expect(page.locator('[data-testid="revisao-q-0"]')).toContainText('Em branco');
-    await expect(page.locator('[data-testid="revisao-q-0"] [data-testid="explicacao-nao-revisada"]')).toBeVisible();
+    await expect(page.locator('[data-testid="revisao-q-0"] [data-testid="explicacao-do-assistente"]')).toBeVisible();
   });
 
   test('"Praticar" abre o quiz da matéria a um clique, em Disciplinas e em Simulados', async ({ page }) => {
@@ -1082,7 +1143,7 @@ test.describe('Simulado por matéria', () => {
     await entrar(page);
     await page.click('[data-testid="nav-disciplinas"]');
     await page.click('[data-testid="praticar-disciplina"]');
-    await expect(page.locator('[data-testid="fonte-Direito Penal"]')).toBeVisible();
+    await expect(page.locator('[data-testid="titulo-da-meta"]')).toContainText('de Direito Penal');
     await expect(page.locator('[data-testid="gerar-quiz"]')).toContainText('3 questões');
 
     await page.click('[data-testid="nav-simulados"]');
@@ -1251,7 +1312,7 @@ test.describe('Todas as telas', () => {
     await page.click('[data-testid="nova-anotacao"]');
     await page.locator('textarea').fill(texto);
 
-    await page.click('[data-testid="sair"]');
+    await sairPeloMenu(page);
     await expect(page.locator('button[type="submit"]')).toBeVisible();
 
     await page.fill('input[type="email"]', EMAIL);
@@ -1261,7 +1322,7 @@ test.describe('Todas as telas', () => {
     await expect(page.locator('textarea')).toHaveValue(texto);
 
     // Outra conta, no mesmo navegador, logo em seguida: caderno vazio.
-    await page.click('[data-testid="sair"]');
+    await sairPeloMenu(page);
     await page.click('[data-testid="trocar-modo"]');
     await page.fill('[data-testid="campo-nome"]', 'Outra Pessoa');
     await page.fill('input[type="email"]', `e2e-${Date.now()}@exemplo.test`);
@@ -1451,7 +1512,7 @@ test.describe('2ª fase: questões discursivas', () => {
     await page.click(`[data-testid="discursiva-${QUESTAO_DISCURSIVA.id}"]`);
     await page.fill('[data-testid="resposta-A"]', 'Rascunho que sobrevive ao sair');
 
-    await page.click('[data-testid="sair"]');
+    await sairPeloMenu(page);
     await page.fill('input[type="email"]', EMAIL);
     await page.fill('input[type="password"]', SENHA);
     await page.click('button[type="submit"]');
@@ -1672,7 +1733,7 @@ test.describe('Card de questão', () => {
     // nenhum POST de tentativa.
     await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="alt-1"]')).toHaveAttribute('data-clicavel', 'sim');
-    await expect(page.locator('[data-testid="proxima-questao"]')).toBeDisabled();
+    await expect(page.locator('[data-testid="alt-1"]')).toHaveAttribute('data-marcada', 'nao');
     expect(posts).toHaveLength(0);
 
     // Alterna: o segundo clique desfaz.
@@ -1683,6 +1744,10 @@ test.describe('Card de questão', () => {
     // Riscada de novo, e respondida pelo texto: o risco é só visual.
     await tesoura.click();
     await page.click('[data-testid="alt-1"] [data-riscada]');
+    await expect(page.locator('[data-testid="alt-1"]')).toHaveAttribute('data-marcada', 'sim');
+    expect(posts).toHaveLength(0);
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
     await expect(page.locator('[data-testid="veredito"]')).toHaveText('Acertou!');
     await expect.poll(() => posts.length).toBe(1);
     expect(posts[0]).toMatchObject({ questao_id: '9301', alternativa: 1, correta: true });
@@ -1690,10 +1755,10 @@ test.describe('Card de questão', () => {
     // Gabarito comentado: abre aberto, com o selo; recolhe e reabre, e o selo
     // fica no cabeçalho mesmo recolhido.
     const alternar = page.locator('[data-testid="alternar-gabarito"]');
-    const selo = page.locator('[data-testid="explicacao-nao-revisada"]');
+    const selo = page.locator('[data-testid="explicacao-do-assistente"]');
     await expect(alternar).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('[data-testid="gabarito-comentado-texto"]')).toContainText(QUESTAO.explicacao);
-    await expect(selo).toHaveText('Gerada por IA · não revisada');
+    await expect(selo).toHaveText('Comentado pelo Kepy · IA');
     await alternar.click();
     await expect(alternar).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('[data-testid="gabarito-comentado-texto"]')).toHaveCount(0);
@@ -1720,6 +1785,8 @@ test.describe('Card de questão', () => {
     await page.click('[data-testid="riscar-2"]');
     await expect(page.locator('[data-testid^="riscar-"][aria-pressed="true"]')).toHaveCount(2);
     await page.click('[data-testid="alt-1"]');
+    await finalizarQuiz(page);
+    await verCorrecao(page, 0);
     await expect(page.locator('[data-testid="gabarito-comentado"]')).toBeVisible();
 
     await page.click('[data-testid="proxima-questao"]');
@@ -1727,6 +1794,61 @@ test.describe('Card de questão', () => {
     await expect(enunciado).not.toHaveText(primeiro);
     await expect(page.locator('[data-testid^="riscar-"][aria-pressed="true"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="alt-0"] [data-riscada]')).toHaveAttribute('data-riscada', 'nao');
+  });
+
+  // Formato de prova: marcar é rascunho. Dá para trocar, pular, voltar e
+  // remarcar sem gravar nada e sem ver gabarito; a revisão leva de volta a
+  // qualquer questão; finalizar grava tudo de uma vez, com a marcação final.
+  test('voltar e remarcar: nada é gravado nem corrigido antes de finalizar', async ({ page }) => {
+    const OUTRA = { ...QUESTAO, id: 9302, numero: 13, enunciado: 'Segunda questão de teste do card.', alternativas: ['c2 A', 'c2 B', 'c2 C', 'c2 D'] };
+    const posts = await simularServidor(page, { questoes: [QUESTAO, OUTRA] });
+    await entrar(page);
+    await page.click('[data-testid="nav-questoes"]');
+    await page.click('[data-testid="gerar-quiz"]');
+
+    const enunciado = page.locator('[data-testid="enunciado"]');
+    const primeiro = await enunciado.innerText();
+    // O quiz é embaralhado: qual das duas veio primeiro decide qual id recebe qual resposta.
+    const [idPrimeira, idSegunda] = primeiro.includes(OUTRA.enunciado) ? [OUTRA.id, QUESTAO.id] : [QUESTAO.id, OUTRA.id];
+
+    // Marca, troca a marcação e avança: sem veredito, sem POST.
+    await page.click('[data-testid="alt-0"]');
+    await page.click('[data-testid="alt-2"]');
+    await expect(page.locator('[data-testid="alt-2"]')).toHaveAttribute('data-marcada', 'sim');
+    await expect(page.locator('[data-testid="alt-0"]')).toHaveAttribute('data-marcada', 'nao');
+    await expect(page.locator('[data-testid="veredito"]')).toHaveCount(0);
+    await page.click('[data-testid="proxima-questao"]');
+    await expect(enunciado).not.toHaveText(primeiro);
+    await expect(page.locator('[data-testid="mapa-0"]')).toHaveAttribute('data-estado', 'marcada');
+
+    // Volta: a marcação está lá e pode mudar.
+    await page.click('[data-testid="questao-anterior"]');
+    await expect(enunciado).toHaveText(primeiro);
+    await expect(page.locator('[data-testid="alt-2"]')).toHaveAttribute('data-marcada', 'sim');
+    await page.click('[data-testid="alt-1"]');
+
+    // A última questão abre a revisão: uma marcada, uma em branco.
+    await page.click('[data-testid="proxima-questao"]');
+    await page.click('[data-testid="proxima-questao"]');
+    await expect(page.locator('[data-testid="tela-revisao"]')).toBeVisible();
+    await expect(page.locator('[data-testid="aviso-em-branco"]')).toContainText('1 questão em branco');
+    await expect(page.locator('[data-testid="revisao-0"]')).toContainText('Marcou B');
+
+    // Da revisão, de volta à questão em branco para responder.
+    await page.click('[data-testid="revisao-1"]');
+    await page.click('[data-testid="alt-3"]');
+    expect(posts).toHaveLength(0);
+
+    await finalizarQuiz(page);
+    await expect.poll(() => posts.length).toBe(2);
+    const porQuestao = Object.fromEntries(posts.map((p) => [p.questao_id, p.alternativa]));
+    expect(porQuestao).toEqual({ [String(idPrimeira)]: 1, [String(idSegunda)]: 3 });
+
+    // A correção é só leitura: clicar não remarca nem grava de novo.
+    await verCorrecao(page, 0);
+    await page.click('[data-testid="alt-3"]');
+    await expect(page.locator('[data-testid="alt-3"]')).toHaveAttribute('data-clicavel', 'nao');
+    expect(posts).toHaveLength(2);
   });
 
   test('questão já respondida mostra "Respondida em" e o histórico', async ({ page }) => {

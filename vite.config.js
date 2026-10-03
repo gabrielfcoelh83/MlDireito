@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath, URL } from 'node:url';
 
 // Em dev convivem DUAS APIs sob o mesmo prefixo /api, e elas não são a mesma
 // coisa:
@@ -20,7 +22,11 @@ const GATEWAY = `http://localhost:${process.env.GATEWAY_PORT || 3000}`;
 const DEV_API = `http://localhost:${process.env.DEV_API_PORT || 3100}`;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  // `@/` é o alias que os componentes do shadcn usam (ver components.json).
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   server: {
     proxy: {
       // As mais específicas primeiro: o Vite casa na ordem de declaração.

@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { Icon } from '../../lib/icons';
 import { cabecalhoDaQuestao, trilhaDaQuestao } from '../../lib/cardDeQuestao';
+import { ASSISTENTE } from '../../lib/assistente';
 
 // Pedaços do card de questão que o quiz (Questoes) e a revisão do simulado
 // desenham igual. As regras moram em `lib/cardDeQuestao.js`; aqui só o
@@ -29,8 +30,8 @@ export function TrilhaDaQuestao({ s, theme, questao, pill, style }) {
       {trilha.disciplina && (
         <span data-testid="disciplina-da-questao" style={pill || s.pill(theme.primarySoft, theme.primaryDark)}>{trilha.disciplina}</span>
       )}
-      {trilha.disciplina && trilha.tema && <span aria-hidden="true" style={{ color: '#b8b2bf', fontSize: 12 }}>›</span>}
-      {trilha.tema && <span data-testid="tema-da-questao" style={{ fontSize: 11.5, color: '#5c5462', fontWeight: 600 }}>{trilha.tema}</span>}
+      {trilha.disciplina && trilha.tema && <span aria-hidden="true" style={{ color: '#b5afa6', fontSize: 12 }}>›</span>}
+      {trilha.tema && <span data-testid="tema-da-questao" style={{ fontSize: 11.5, color: '#4f4b45', fontWeight: 600 }}>{trilha.tema}</span>}
     </span>
   );
 }
@@ -57,19 +58,19 @@ export function BotaoRiscar({ theme, indice, riscada, onAlternar }) {
         opacity: riscada ? 1 : 0.55,
       }}
     >
-      <Icon name="scissors" color={riscada ? theme.primaryDark : '#8b8391'} size={15} />
+      <Icon name="scissors" color={riscada ? theme.primaryDark : '#7a766f'} size={15} />
     </button>
   );
 }
 
-// Selo da explicação que ainda não passou por revisão humana. A regra e o
-// testid são os mesmos desde que o selo nasceu — quem lê precisa saber disso
-// antes de decorar.
-function SeloNaoRevisada({ s, questao }) {
-  if (questao.revisada) return null;
+// Assinatura do comentário escrito pela IA: o nome do assistente
+// (lib/assistente.js) com o "IA" escrito ao lado — o nome é rosto, não
+// disfarce. Comentário que não veio da IA não leva selo.
+function SeloDoAssistente({ s, questao }) {
+  if (questao.explicacaoFonte !== 'ia') return null;
   return (
-    <span data-testid="explicacao-nao-revisada" style={s.pill('#FEF3C7', '#B45309')}>
-      {questao.explicacaoFonte === 'ia' ? 'Gerada por IA · não revisada' : 'Não revisada'}
+    <span data-testid="explicacao-do-assistente" title={ASSISTENTE.descricao} style={s.pill('#F5EEDC', '#94661A')}>
+      Comentado pelo {ASSISTENTE.nome} · IA
     </span>
   );
 }
@@ -96,16 +97,16 @@ export function GabaritoComentado({ s, questao, compacto = false, className, sty
           aria-expanded={aberto}
           aria-controls={idCorpo}
           onClick={() => setAberto((a) => !a)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, fontSize: fonte, fontWeight: 700, color: '#2c2530' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, fontSize: fonte, fontWeight: 700, color: '#1c1b19' }}
         >
-          <Icon name="lightbulb" color="#F59E0B" size={compacto ? 15 : 16} />
+          <Icon name="lightbulb" color="#B07A1F" size={compacto ? 15 : 16} />
           Gabarito comentado
-          <Icon name="chevron-down" color="#8b8391" size={15} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform 160ms var(--ease-out)' }} />
+          <Icon name="chevron-down" color="#7a766f" size={15} style={{ transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform 160ms var(--ease-out)' }} />
         </button>
-        <SeloNaoRevisada s={s} questao={questao} />
+        <SeloDoAssistente s={s} questao={questao} />
       </div>
       {aberto && (
-        <div id={idCorpo} data-testid="gabarito-comentado-texto" style={{ fontSize: fonte, color: '#5c5462', lineHeight: compacto ? 1.55 : 1.6, marginTop: compacto ? 6 : 10 }}>
+        <div id={idCorpo} data-testid="gabarito-comentado-texto" style={{ fontSize: fonte, color: '#4f4b45', lineHeight: compacto ? 1.55 : 1.6, marginTop: compacto ? 6 : 10 }}>
           {questao.explicacao}
           {children}
         </div>
@@ -122,7 +123,7 @@ export function SeloRespondida({ s, theme, historico, aberto, onAlternar, idList
   const quando = historico.ultima?.dataFormatada;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span data-testid="respondida-em" style={s.pill('#F1F5F9', '#475569')}>
+      <span data-testid="respondida-em" style={s.pill('#f1efea', '#475569')}>
         {quando ? `Respondida em ${quando}` : 'Já respondida'}
       </span>
       <button
@@ -142,15 +143,15 @@ export function SeloRespondida({ s, theme, historico, aberto, onAlternar, idList
 
 export function ListaDoHistorico({ historico, id }) {
   return (
-    <div id={id} data-testid="historico-da-questao" className="entra" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#faf9fb', border: '1px solid #eef0f4' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5c5462', marginBottom: 6 }}>Suas tentativas nesta questão</div>
+    <div id={id} data-testid="historico-da-questao" className="entra" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: '#faf9f6', border: '1px solid #eeebe5' }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#4f4b45', marginBottom: 6 }}>Suas tentativas nesta questão</div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {historico.tentativas.map((t, i) => (
-          <li key={t.id ?? `sem-id-${i}`} data-testid="historico-item" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#5c5462' }}>
+          <li key={t.id ?? `sem-id-${i}`} data-testid="historico-item" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#4f4b45' }}>
             <span style={{ minWidth: 78, fontVariantNumeric: 'tabular-nums' }}>{t.dataFormatada || 'Data desconhecida'}</span>
             <span style={{ minWidth: 92 }}>{t.letra ? `Marcou ${t.letra}` : 'Sem alternativa'}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700, color: t.correta ? '#059669' : '#DC2626' }}>
-              <Icon name={t.correta ? 'circle-check' : 'circle-x'} color={t.correta ? '#10B981' : '#EF4444'} size={13} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700, color: t.correta ? '#3E6B3E' : '#9E3630' }}>
+              <Icon name={t.correta ? 'circle-check' : 'circle-x'} color={t.correta ? '#4A7A4A' : '#B4413A'} size={13} />
               {t.correta ? 'Acertou' : 'Errou'}
             </span>
           </li>
