@@ -34,6 +34,7 @@ jobs:
   # Job 2: E2E + API Tests
   test-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: lint
     steps:
       - uses: actions/checkout@v4
