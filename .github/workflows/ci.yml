@@ -50,6 +50,9 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Gerar segredo efêmero do backend E2E
+        run: echo "E2E_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
       # A suíte exerce login e gravação de verdade desde que as tentativas
       # saíram do localStorage. Sobe o mesmo backend que roda em produção, a
       # partir das imagens publicadas pelo pipeline da plataforma — mockar aqui

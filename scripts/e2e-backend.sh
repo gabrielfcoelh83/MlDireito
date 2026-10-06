@@ -89,6 +89,39 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+# O cadastro publica `user.registered` no Redis e o user-service cria o perfil
+# de forma assíncrona. Healthcheck verde não garante que essa mensagem já foi
+# processada, então o backend só fica pronto quando a leitura do perfil também
+# for confirmada.
+USER_ID=$(curl -s -X POST "http://localhost:${PORTA}/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${EMAIL}\",\"password\":\"${SENHA}\"}" | jq -r '.user.id // empty')
+
+if [ -z "$USER_ID" ]; then
+  echo "  ✗ login não devolveu o id do usuário" >&2
+  $COMPOSE logs --tail=30 auth-service api-gateway >&2
+  exit 1
+fi
+
+PERFIL_PRONTO=0
+for i in $(seq 1 60); do
+  STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+    "http://localhost:${PORTA}/api/users/${USER_ID}" \
+    -H "Authorization: ******")
+  if [ "$STATUS" = "200" ]; then
+    PERFIL_PRONTO=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$PERFIL_PRONTO" != "1" ]; then
+  echo "  ✗ perfil do usuário ${USER_ID} não ficou disponível após 60s" >&2
+  $COMPOSE logs --tail=50 auth-service user-service api-gateway >&2
+  exit 1
+fi
+echo "  perfil do usuário ${USER_ID} disponível"
+
 # Prova que o token emitido pelo auth-service é aceito pelo estudo-service —
 # ou seja, que os dois estão com o mesmo JWT_SECRET.
 STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
