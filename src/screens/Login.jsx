@@ -153,7 +153,7 @@ export default function Login({ theme, s, onEntrar }) {
             ))}
           </div>
         </div>
-        <div style={{ fontSize: 12, color: 'rgba(244,239,232,.55)' }}>Exame de Ordem Unificado · 1ª e 2ª fase · versão beta, em evolução</div>
+        <div style={{ fontSize: 12, color: 'rgba(244,239,232,.55)' }}>Versão beta</div>
       </aside>
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
