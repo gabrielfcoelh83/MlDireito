@@ -452,10 +452,14 @@ roda (o domínio da Vercel e `http://localhost:5173`) tem de estar nas
 "Origens JavaScript autorizadas" do Client ID no Google Cloud.
 
 Conta nova é criada pelo Google na primeira vez. Se o e-mail já tem conta
-com senha, o Google **não** a liga sozinho (409, "entre com e-mail e
-senha"): o cadastro por senha não confirma o e-mail, e ligar entregaria a
-conta a quem cadastrou o e-mail de outra pessoa. Ligar o Google a uma conta
-com senha, com a pessoa já logada, ainda não existe.
+com senha, o Google a **liga e entra** (decisão no auth-service):
+- conta que já confirmou o e-mail: liga e a senha continua valendo;
+- conta que nunca confirmou: o Google assume a conta, a senha de quem a
+  criou é apagada e o e-mail fica confirmado — o login por senha recusa
+  conta não confirmada, então quem a criou nunca recebeu token. Para ter
+  senha de novo, "Esqueci minha senha" (que agora atende conta só com
+  Google).
+Só continua 409 o e-mail já ligado a OUTRA conta do Google.
 
 Para funcionar em produção falta configuração: o `GOOGLE_CLIENT_ID` precisa
 chegar ao auth-service pelo `docker-compose.prod.yml` e pelo `.env` que o
@@ -629,10 +633,10 @@ mostrou um dia a menos no Brasil com a CI verde.
 9. **Respostas do simulado na fila se perdem se a aba for descartada** — o
     aviso de sair cobre fechar e recarregar, mas não a aba que o sistema
     descarta (comum no celular) nem o navegador que fecha sem perguntar.
-10. **E-mail cadastrado por outra pessoa bloqueia o Google** — como o
-    cadastro por senha não confirma o e-mail, quem cadastrou o e-mail de
-    outra pessoa impede o dono de entrar pelo Google (409), e não existe
-    "esqueci a senha". O dono não é invadido, mas fica sem acesso.
+10. **Entrar pelo Google apaga a senha de conta não confirmada** — é o
+    que impede o pré-sequestro, mas o dono legítimo que nunca confirmou o
+    e-mail também perde a senha e passa a entrar pelo Google (ou cria uma
+    senha nova por "Esqueci minha senha").
 11. **`PATCH /api/tentativas/:id` sem uso** — o pop-up "como você chegou
     nessa resposta?" saiu do quiz e era o único a gravar `tipo` e `certeza`.
     A rota continua no estudo-service; as tentativas antigas mantêm os
