@@ -454,11 +454,13 @@ roda (o domínio da Vercel e `http://localhost:5173`) tem de estar nas
 Conta nova é criada pelo Google na primeira vez. Se o e-mail já tem conta
 com senha, o Google a **liga e entra** (decisão no auth-service):
 - conta que já confirmou o e-mail: liga e a senha continua valendo;
-- conta que nunca confirmou: o Google assume a conta, a senha de quem a
-  criou é apagada e o e-mail fica confirmado — o login por senha recusa
-  conta não confirmada, então quem a criou nunca recebeu token. Para ter
-  senha de novo, "Esqueci minha senha" (que agora atende conta só com
-  Google).
+- conta que nunca confirmou: a partir de 14/10/2026 o Google assume a
+  conta, a senha de quem a criou é apagada e o e-mail fica confirmado — o
+  login por senha recusa conta não confirmada, então quem a criou não tem
+  token. Antes dessa data continua o 409: até a confirmação de e-mail
+  (05–06/10) o cadastro emitia token de 7 dias, e um desses ainda poderia
+  valer. Para ter senha de novo, "Esqueci minha senha" (que agora atende
+  conta só com Google).
 Só continua 409 o e-mail já ligado a OUTRA conta do Google.
 
 Para funcionar em produção falta configuração: o `GOOGLE_CLIENT_ID` precisa
