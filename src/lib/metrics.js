@@ -219,7 +219,7 @@ export function metaDiaria(config = {}, usuarioTentativas = {}, resultadosHistor
     if (dateKey(r.data_conclusao) === hojeKey) respondidas += r.quantidade || 0;
   }
 
-  const folga = Array.isArray(diasDeEstudo) && diasDeEstudo.length > 0 && !diasDeEstudo.includes(meioDiaLocal(hojeKey).getDay());
+  const folga = Boolean(hojeKey) && Array.isArray(diasDeEstudo) && diasDeEstudo.length > 0 && !diasDeEstudo.includes(meioDiaLocal(hojeKey).getDay());
 
   const faltam = Math.max(0, meta - respondidas);
   return {

@@ -85,7 +85,7 @@ export default function Dashboard({ theme, s, data, go, dash, setDash, config, u
     {
       testid: 'card-sequencia', iconWrap: iw('#4A7A4A', '#3E6B3E'), icon: 'trending-up', label: 'Sequência atual',
       value: `${streak.dias} ${streak.dias === 1 ? 'dia' : 'dias'}`,
-      sub: meta.folga ? 'hoje é folga — a sequência não quebra' : streak.dias > 0 ? 'estudando' : 'comece hoje!',
+      sub: meta.folga && streak.dias > 0 ? 'hoje é folga — a sequência não quebra' : meta.folga ? 'hoje é folga' : streak.dias > 0 ? 'estudando' : 'comece hoje!',
     },
     {
       testid: 'card-meta', iconWrap: iw('#B07A1F', '#94661A'), icon: 'flag', label: 'Meta diária',

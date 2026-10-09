@@ -1019,7 +1019,7 @@ export default function App() {
     notificacoes.push({
       icone: 'trending-up', cor: '#4A7A4A',
       titulo: `${sequencia.dias} dias seguidos de estudo`,
-      texto: meta.folga ? 'Hoje é folga no seu plano: a sequência não quebra.' : 'Responda hoje para não perder a sequência.',
+      texto: folgaHoje ? 'Hoje é folga no seu plano: a sequência não quebra.' : 'Responda hoje para não perder a sequência.',
     });
   }
 
