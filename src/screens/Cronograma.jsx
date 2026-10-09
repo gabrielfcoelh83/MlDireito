@@ -232,9 +232,12 @@ export default function Cronograma({
   const sincronizarCalendar = async () => {
     setCalendar((c) => ({ ...c, syncing: true, erro: null, aviso: null }));
     try {
+      // Plano recalculado na hora do clique: com a aba aberta desde ontem, o
+      // `plano` do último render começaria ontem e deixaria hoje+6 de fora.
+      const planoAgora = planoDaSemana({ disciplinas, tentativas: usuarioTentativas, meta, dificuldades, diasDeEstudo, hoje: new Date() });
       const resposta = await sincronizarGoogleCalendar({
-        events: eventosDoPlano(plano, { ...bloco, timeZone: fusoDoNavegador() }),
-        intervalo: intervaloDoPlano(plano),
+        events: eventosDoPlano(planoAgora, { ...bloco, timeZone: fusoDoNavegador() }),
+        intervalo: intervaloDoPlano(planoAgora),
       });
       if (!montado.current) return;
       setCalendar((c) => ({ ...c, syncing: false, aviso: resumoDaSincronizacao(resposta) }));

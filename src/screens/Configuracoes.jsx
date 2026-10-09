@@ -32,10 +32,13 @@ export default function Configuracoes({
   useEffect(() => {
     if (ancora !== 'meu-perfil-de-estudo') return;
     const alvo = document.querySelector('[data-testid="meu-perfil-de-estudo"]');
-    alvo?.scrollIntoView({ block: 'start' });
+    // Perfil ainda carregando: a seção não existe. Guarda a âncora e tenta de
+    // novo quando o perfil chegar.
+    if (!alvo) return;
+    alvo.scrollIntoView({ block: 'start' });
     document.getElementById('meu-perfil-titulo')?.focus({ preventScroll: true });
     ancoraUsada?.();
-  }, [ancora, ancoraUsada]);
+  }, [ancora, ancoraUsada, perfil]);
 
   const label = { fontSize: 12, color: '#7a766f', marginBottom: 5 };
   const input = { width: '100%', fontSize: 13.5, border: '1px solid rgba(0,0,0,.1)', borderRadius: 9, padding: '9px 12px', color: '#1c1b19', fontFamily: 'inherit' };
