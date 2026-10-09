@@ -34,18 +34,19 @@ export default function Kepy({
   // Dia local, não UTC: depois das 21h no Brasil o UTC já é amanhã.
   const agora = new Date();
   const hoje = `${agora.getFullYear()}-${agora.getMonth() + 1}-${agora.getDate()}`;
-  const estadoDoDia = meta.batida ? 'batida' : meta.respondidas === 0 ? 'zero' : 'andando';
+  // A folga tem estado próprio: não é "zero" nem "atrasado".
+  const estadoDoDia = meta.batida ? 'batida' : meta.folga ? 'folga' : meta.respondidas === 0 ? 'zero' : 'andando';
   const sugestao = [hoje, estadoDoDia, materia?.disciplina || '', erros > 0 ? 'erros' : ''].join('|');
 
   return (
     <AgentDock
       agentName={ASSISTENTE.nome}
       // A expressão segue o momento: pensando enquanto responde, atento com
-      // o painel aberto, feliz com a meta batida.
+      // o painel aberto, feliz com a meta batida ou na folga.
       avatar={({ modo, trabalhando }) => (
         <KepyFace
           cores={{ primarySoft: theme.primarySoft, primaryDark: theme.primaryDark, accent: theme.accent }}
-          humor={trabalhando ? 'pensando' : meta.batida ? 'feliz' : modo !== 'fechado' ? 'atento' : 'normal'}
+          humor={trabalhando ? 'pensando' : meta.batida || meta.folga ? 'feliz' : modo !== 'fechado' ? 'atento' : 'normal'}
         />
       )}
       status={statusDoDia(ctx)}

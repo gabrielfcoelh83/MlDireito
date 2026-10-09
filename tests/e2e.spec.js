@@ -1901,17 +1901,20 @@ const chaveLocal = (page, somarDias = 0) => page.evaluate((n) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }, somarDias);
 
-async function folgaHoje(page) {
+// `escolher(hoje)` devolve os `diasDaSemana` da ficha servida ao app.
+async function fichaComDias(page, escolher) {
   await page.route('**/api/users/*', async (rota) => {
     if (rota.request().method() !== 'GET') return rota.fallback();
     const resposta = await rota.fetch();
     const json = await resposta.json();
-    const hoje = new Date().getDay();
     const ficha = { ...(json.profile_data?.ficha || {}) };
-    ficha.diasDaSemana = [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje);
+    ficha.diasDaSemana = escolher(new Date().getDay());
     return rota.fulfill({ response: resposta, json: { ...json, profile_data: { ...json.profile_data, ficha } } });
   });
 }
+
+const folgaHoje = (page) => fichaComDias(page, (hoje) => [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== hoje));
+const estudoTodoDia = (page) => fichaComDias(page, () => [0, 1, 2, 3, 4, 5, 6]);
 
 // Status do Google Agenda simulado; devolve os pedidos que chegaram.
 async function simularGoogleAgenda(page, { conectado = false, sync, confirmar, desconectar, start } = {}) {
@@ -2120,5 +2123,45 @@ test.describe('Cronograma', () => {
 
     await page.click('[data-testid="ajustar-plano"]');
     await expect(page.locator('[data-testid="meu-perfil-de-estudo"]')).toBeInViewport();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dashboard: a folga da ficha não cobra a meta nem quebra a sequência
+// ---------------------------------------------------------------------------
+//
+// Mesma troca de ficha do Cronograma: a folga cai em hoje, qualquer que seja
+// o dia da semana da CI. A conta é compartilhada, então o número respondido
+// hoje depende da ordem dos testes — o que se confere é o texto.
+
+test.describe('Dashboard e a folga da ficha', () => {
+  test('na folga, a meta mostra "Folga hoje" e não "faltam"', async ({ page }) => {
+    await folgaHoje(page);
+    await entrar(page);
+    await page.click('[data-testid="nav-dashboard"]');
+
+    const cardMeta = page.locator('[data-testid="card-meta"]');
+    await expect(cardMeta).toContainText('Folga hoje');
+    await expect(cardMeta).not.toContainText(/faltam/i);
+    await expect(page.locator('[data-testid="texto-da-meta"]')).toContainText('Hoje é folga no seu plano');
+    await expect(page.locator('[data-testid="texto-da-meta"]')).not.toContainText(/faltam/i);
+    await expect(page.locator('[data-testid="card-sequencia"]')).toContainText('hoje é folga — a sequência não quebra');
+
+    // O Kepy também não cobra: status de folga, placar no mesmo formato.
+    await expect(page.locator('[data-testid="kepy-status"]')).toContainText('Folga hoje');
+    await page.click('[data-testid="kepy-guia"]');
+    await expect(page.locator('[data-testid="kepy-meta"]')).toHaveText(/^\d+\/\d+$/);
+    await expect(page.locator('[data-testid="painel-kepy"]')).toContainText('Folga hoje · bônus');
+  });
+
+  test('num dia de estudo, a meta é cobrada como antes', async ({ page }) => {
+    await estudoTodoDia(page);
+    await entrar(page);
+    await page.click('[data-testid="nav-dashboard"]');
+
+    await expect(page.locator('[data-testid="card-meta"]')).toContainText(/faltam \d+|meta batida/);
+    await expect(page.locator('[data-testid="texto-da-meta"]')).toHaveText(/^(Faltam \d+ quest(ão|ões) para bater a meta de hoje\.|Meta de hoje batida\.)$/);
+    await expect(page.locator('[data-testid="card-sequencia"]')).not.toContainText('folga');
+    await expect(page.locator('[data-testid="kepy-status"]')).not.toContainText('Folga');
   });
 });

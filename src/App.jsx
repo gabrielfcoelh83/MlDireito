@@ -938,8 +938,10 @@ export default function App() {
     );
   }
 
-  const meta = metaDiaria(state.configuracoes, usuarioTentativas, state.resultados_historico);
-  const sequencia = sequenciaAtual(usuarioTentativas, state.resultados_historico);
+  // Com a ficha, a folga não cobra a meta nem quebra a sequência (lib/metrics.js).
+  const agora = new Date();
+  const meta = metaDiaria(state.configuracoes, usuarioTentativas, state.resultados_historico, agora, diasDeEstudo);
+  const sequencia = sequenciaAtual(usuarioTentativas, state.resultados_historico, agora, diasDeEstudo);
   const diasProva = diasAteProva(state.configuracoes);
 
   const cabecalho = state.screen === 'dashboard'
@@ -1017,7 +1019,7 @@ export default function App() {
     notificacoes.push({
       icone: 'trending-up', cor: '#4A7A4A',
       titulo: `${sequencia.dias} dias seguidos de estudo`,
-      texto: 'Responda hoje para não perder a sequência.',
+      texto: meta.folga ? 'Hoje é folga no seu plano: a sequência não quebra.' : 'Responda hoje para não perder a sequência.',
     });
   }
 
@@ -1062,7 +1064,7 @@ export default function App() {
     usuarioTentativas, disciplinas, revisao,
     resultados_historico: state.resultados_historico,
     config: state.configuracoes,
-    revisarQuestoes, praticarDisciplina, dificuldades,
+    revisarQuestoes, praticarDisciplina, dificuldades, diasDeEstudo,
   };
 
   return (

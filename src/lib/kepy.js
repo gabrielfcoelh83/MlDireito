@@ -8,7 +8,7 @@
 // `{ id, rotulo, icone, ir }` (troca de tela).
 //
 // contexto: {
-//   meta: { meta, respondidas, faltam, batida },
+//   meta: { meta, respondidas, faltam, batida, folga },  // folga: dia fora da ficha
 //   materia: { disciplina, motivo } | null,   // a de hoje no plano
 //   foco: string,                             // a frase do foco do dia
 //   erros, diasProva, temDataProva, sequenciaDias,
@@ -42,7 +42,10 @@ const acaoDataProva = { id: 'kepy-data-prova', icone: 'flag', rotulo: 'Definir a
 export function guiaDoDia(ctx) {
   const falas = [ctx.foco];
   if (ctx.sequenciaDias >= 2) {
-    falas.push(ctx.meta.batida
+    // Na folga não há o que manter: o dia sem resposta não quebra a sequência.
+    falas.push(ctx.meta.folga
+      ? `${plural(ctx.sequenciaDias, 'dia', 'dias')} seguidos de estudo. Hoje é folga: a sequência não quebra.`
+      : ctx.meta.batida
       ? `${plural(ctx.sequenciaDias, 'dia', 'dias')} seguidos de estudo, e hoje já conta.`
       : `${plural(ctx.sequenciaDias, 'dia', 'dias')} seguidos de estudo. Responder hoje mantém a sequência.`);
   }
@@ -61,6 +64,8 @@ export function guiaDoDia(ctx) {
 
 /** Status curto da barra: o que muda ao longo do dia. */
 export function statusDoDia(ctx) {
+  // Folga não é "0/20, faltam 20": nada é cobrado, e o que vier é bônus.
+  if (ctx.meta.folga) return ctx.meta.respondidas > 0 ? `Folga hoje · +${ctx.meta.respondidas} de bônus` : 'Folga hoje';
   if (ctx.meta.batida) return `Meta batida · ${ctx.meta.respondidas} hoje`;
   return `${ctx.meta.respondidas}/${ctx.meta.meta} hoje · faltam ${ctx.meta.faltam}`;
 }
@@ -107,7 +112,12 @@ export function responder(mensagem, ctx) {
   }
 
   if (tem(msg, 'plano', 'semana', 'cronograma', 'estudar', 'comec', 'o que fa')) {
-    const texto = ctx.materia?.disciplina
+    // Na folga, `materia` é a do próximo dia de estudo (App.jsx).
+    const texto = meta.folga
+      ? ctx.materia?.disciplina
+        ? `Hoje é folga no seu plano. Se quiser adiantar, a próxima matéria é ${ctx.materia.disciplina}.`
+        : 'Hoje é folga no seu plano. Descansar também faz parte.'
+      : ctx.materia?.disciplina
       ? `Hoje o plano é ${ctx.materia.disciplina}${ctx.materia.motivo ? ` — ${ctx.materia.motivo}` : ''}.`
       : 'Ainda não há matéria definida para hoje. Responda algumas questões e o plano se ajusta.';
     return { texto, acoes: [acaoDeHoje(ctx), acaoPlano] };
@@ -125,7 +135,11 @@ export function responder(mensagem, ctx) {
   }
 
   if (tem(msg, 'meta', 'falta', 'quanto')) {
-    const texto = meta.batida
+    const texto = meta.folga
+      ? meta.respondidas > 0
+        ? `Hoje é folga no seu plano, e você ainda fez ${plural(meta.respondidas, 'questão', 'questões')}: é bônus. A meta volta no próximo dia de estudo.`
+        : 'Hoje é folga no seu plano: não há meta a cumprir. Se quiser adiantar, o que responder é bônus.'
+      : meta.batida
       ? `Você já bateu a meta: ${meta.respondidas} de ${meta.meta} hoje. Quer aproveitar o embalo e seguir no plano?`
       : `Você fez ${meta.respondidas} de ${meta.meta}. Faltam ${plural(meta.faltam, 'questão', 'questões')} para a meta de hoje.`;
     return { texto, acoes: [acaoDeHoje(ctx)] };

@@ -52,6 +52,17 @@ function diffDays(aKey, bKey) {
   return Math.round((a - b) / 86400000);
 }
 
+/**
+ * O dia 'YYYY-MM-DD' como Date ao meio-dia local. `getDay()` de uma chave
+ * passada por `new Date('AAAA-MM-DD')` sairia em UTC — no Brasil, o dia
+ * anterior —, e meio-dia deixa andar de dia em dia sem tropeçar no horário de
+ * verão.
+ */
+function meioDiaLocal(chave) {
+  const [y, m, d] = chave.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
 // ---------------------------------------------------------------------------
 // Normalização: achatar todas as tentativas em uma lista única
 // ---------------------------------------------------------------------------
@@ -138,11 +149,18 @@ export function taxaDeAcertos(usuarioTentativas = {}, resultadosHistorico = [], 
 
 /**
  * Considera "atividade" qualquer tentativa de questão OU simulado concluído no dia.
- * Regra: conta dias consecutivos terminando no dia de atividade mais recente.
- * O streak só é "atual" se a última atividade foi hoje ou ontem (tolerância de 1 dia
- * para não zerar durante o dia). Caso contrário, retorna 0.
+ *
+ * Conta dias para trás a partir de hoje:
+ *   - dia com atividade soma 1 — inclusive na folga (estudar na folga é bônus);
+ *   - dia de FOLGA da ficha sem atividade é pulado: não soma nem quebra;
+ *   - dia de ESTUDO sem atividade quebra a sequência — menos HOJE, que ainda
+ *     está em andamento (a sequência vem de ontem para trás).
+ *
+ * `diasDeEstudo`: os `getDay()` de estudo (`diasDeEstudoDaFicha`), ou null =
+ * todos os dias são de estudo — e aí a regra é a de antes da ficha: só vale a
+ * sequência que termina hoje ou ontem.
  */
-export function sequenciaAtual(usuarioTentativas = {}, resultadosHistorico = [], hoje = new Date()) {
+export function sequenciaAtual(usuarioTentativas = {}, resultadosHistorico = [], hoje = new Date(), diasDeEstudo = null) {
   const dias = new Set();
   for (const t of flattenTentativas(usuarioTentativas)) {
     if (t.dia) dias.add(t.dia);
@@ -154,17 +172,25 @@ export function sequenciaAtual(usuarioTentativas = {}, resultadosHistorico = [],
   if (dias.size === 0) return { dias: 0, ultimaAtividade: null };
 
   const ordenados = [...dias].sort(); // asc
+  const maisAntiga = ordenados[0];
   const maisRecente = ordenados[ordenados.length - 1];
   const hojeKey = dateKey(hoje);
-  const gap = diffDays(hojeKey, maisRecente); // dias desde a última atividade
+  const ehEstudo = (d) => !Array.isArray(diasDeEstudo) || diasDeEstudo.length === 0 || diasDeEstudo.includes(d.getDay());
 
-  if (gap > 1) return { dias: 0, ultimaAtividade: maisRecente };
+  // Começa em hoje — ou no dia mais recente, se o relógio do aparelho estiver
+  // atrasado em relação a uma resposta (era assim antes: contava a partir dela).
+  const inicio = !hojeKey || maisRecente > hojeKey ? maisRecente : hojeKey;
+  const cursor = meioDiaLocal(inicio);
 
-  // Conta para trás a partir do dia mais recente
-  let streak = 1;
-  for (let i = ordenados.length - 1; i > 0; i--) {
-    if (diffDays(ordenados[i], ordenados[i - 1]) === 1) streak++;
-    else break;
+  let streak = 0;
+  // A varredura acaba antes do primeiro dia com atividade: daí para trás só há
+  // dias vazios, e o laço não precisa de teto arbitrário.
+  for (let primeiro = true; ; primeiro = false) {
+    const chave = dateKey(cursor);
+    if (chave < maisAntiga) break;
+    if (dias.has(chave)) streak++;
+    else if (!primeiro && ehEstudo(cursor)) break;
+    cursor.setDate(cursor.getDate() - 1);
   }
   return { dias: streak, ultimaAtividade: maisRecente };
 }
@@ -173,7 +199,13 @@ export function sequenciaAtual(usuarioTentativas = {}, resultadosHistorico = [],
 // 3) Meta diária (definida pelo usuário) + progresso de hoje
 // ---------------------------------------------------------------------------
 
-export function metaDiaria(config = {}, usuarioTentativas = {}, resultadosHistorico = [], hoje = new Date()) {
+/**
+ * `diasDeEstudo` como em `sequenciaAtual`. Na folga, `meta` continua o número
+ * configurado (a barra serve a quem quiser adiantar), mas não é cobrada:
+ * `folga` diz que hoje é folga e `cobrada` é o contrário. `batida` segue sendo
+ * só `respondidas >= meta` — quem desenha decide o que mostrar.
+ */
+export function metaDiaria(config = {}, usuarioTentativas = {}, resultadosHistorico = [], hoje = new Date(), diasDeEstudo = null) {
   const meta = Number(config.meta) > 0 ? Number(config.meta) : 20;
   const hojeKey = dateKey(hoje);
 
@@ -187,6 +219,8 @@ export function metaDiaria(config = {}, usuarioTentativas = {}, resultadosHistor
     if (dateKey(r.data_conclusao) === hojeKey) respondidas += r.quantidade || 0;
   }
 
+  const folga = Array.isArray(diasDeEstudo) && diasDeEstudo.length > 0 && !diasDeEstudo.includes(meioDiaLocal(hojeKey).getDay());
+
   const faltam = Math.max(0, meta - respondidas);
   return {
     meta,
@@ -194,6 +228,8 @@ export function metaDiaria(config = {}, usuarioTentativas = {}, resultadosHistor
     faltam,
     pct: meta > 0 ? Math.min(100, Math.round((respondidas / meta) * 100)) : 0,
     batida: respondidas >= meta,
+    folga,
+    cobrada: !folga,
   };
 }
 

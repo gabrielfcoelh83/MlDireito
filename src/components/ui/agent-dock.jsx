@@ -303,13 +303,14 @@ export function AgentDock({
                   {guia.meta && (
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12, color: APAGADO }}>
-                        <span>Meta de hoje</span>
+                        {/* Na folga a barra é só o bônus: nada é cobrado. */}
+                        <span>{guia.meta.folga ? 'Folga hoje · bônus' : 'Meta de hoje'}</span>
                         <span data-testid="kepy-meta" style={{ color: CLARO, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                           {guia.meta.respondidas}/{guia.meta.meta}
                         </span>
                       </div>
                       <div style={{ height: 6, borderRadius: 4, background: VEU, marginTop: 6, overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.min(guia.meta.respondidas / (guia.meta.meta || 1), 1) * 100}%`, height: '100%', borderRadius: 4, background: guia.meta.batida ? '#8DB88D' : cores.primarySoft }} />
+                        <div style={{ width: `${Math.min(guia.meta.respondidas / (guia.meta.meta || 1), 1) * 100}%`, height: '100%', borderRadius: 4, background: guia.meta.batida || guia.meta.folga ? '#8DB88D' : cores.primarySoft }} />
                       </div>
                     </div>
                   )}

@@ -61,6 +61,23 @@ const destino = (r) => r.acoes.map((a) => a.estudar || a.ir);
   exigir(/Meta batida/.test(statusDoDia(ctx({ meta: { meta: 40, respondidas: 41, faltam: 0, batida: true } }))), 'status com meta batida');
 }
 
+// --- folga da ficha: nada é cobrado ---
+{
+  const folga = (respondidas) => ctx({ meta: { meta: 40, respondidas, faltam: 40 - respondidas, batida: false, folga: true, cobrada: false } });
+  exigir(statusDoDia(folga(0)) === 'Folga hoje', `status na folga sem resposta: ${statusDoDia(folga(0))}`);
+  exigir(statusDoDia(folga(6)) === 'Folga hoje · +6 de bônus', `status na folga com bônus: ${statusDoDia(folga(6))}`);
+  exigir(!/falta/i.test(statusDoDia(folga(6))), 'folga não diz "faltam"');
+  const g = guiaDoDia(folga(0));
+  exigir(g.falas.some((f) => /Hoje é folga: a sequência não quebra/.test(f)), 'na folga a sequência não pede resposta hoje');
+  exigir(!g.falas.some((f) => /Responder hoje mantém/.test(f)), 'na folga não cobra "responder hoje"');
+  const r = responder('quanto falta pra meta', folga(0));
+  exigir(/folga/.test(r.texto) && !/Faltam/.test(r.texto), `meta na folga: ${r.texto}`);
+  exigir(/bônus/.test(responder('quanto falta pra meta', folga(3)).texto), 'o que se faz na folga é bônus');
+  exigir(/folga/.test(responder('o que estudar hoje', folga(0)).texto), 'plano na folga diz que é folga');
+  // Sem `folga` (sem ficha), tudo como antes.
+  exigir(statusDoDia(ctx()) === '25/40 hoje · faltam 15', 'sem folga, status de antes');
+}
+
 if (falhas.length > 0) {
   console.error(`\n❌ ${falhas.length} problema(s):`);
   for (const f of falhas) console.error('   - ' + f);

@@ -247,7 +247,18 @@ UTC e em São Paulo).
 - **Dias de estudo da ficha.** `diasDeEstudoDaFicha(ficha)` lê
   `ficha.diasDaSemana`; sem ficha ou lista vazia → `null`, e todo dia é de
   estudo (o comportamento de antes). O `App` passa `diasDeEstudo` ao
-  Cronograma e usa o mesmo plano no "Foco de hoje".
+  Cronograma (e a todas as telas, em `screenProps`) e usa o mesmo plano no
+  "Foco de hoje".
+- **Meta e sequência na folga** (`lib/metrics.js`, testado em
+  `tests/sequencia.test.js`). `metaDiaria(..., hoje, diasDeEstudo)` devolve
+  também `folga` e `cobrada = !folga`; `meta` continua o número configurado
+  e `batida` continua `respondidas >= meta` — quem desenha decide. Dashboard
+  (cartão e "Hoje"), Questões, Kepy (status, guia, conversa) e o painel
+  mostram "Folga hoje"/bônus em vez de "faltam N". `sequenciaAtual(...,
+  hoje, diasDeEstudo)` conta para trás a partir de hoje: dia com atividade
+  soma (folga inclusive), folga vazia é pulada, dia de estudo vazio quebra —
+  menos hoje, ainda em andamento. Com `null`, idêntica à regra antiga
+  (comparada num sorteio de agendas no teste).
 - **Folga.** Dia fora da ficha: sem matéria, meta 0, sem barra e **sem botão**
   (não há matéria para "Adiantar"; quem quer estudar numa folga adianta o
   próximo dia de estudo, no botão dele). Resposta dada na folga aparece na
@@ -747,10 +758,9 @@ mostrou um dia a menos no Brasil com a CI verde.
     estado local de `Simulados.jsx`; clicar noutro item do menu (ou
     recarregar) descarta as respostas marcadas sem perguntar e sem enviar
     nada ao servidor.
-16. **Folga só no plano** — `diasDaSemana` faz a folga no Cronograma, no
-    "Foco de hoje" e no aviso da meta do sino, mas `metaDiaria` (barra do
-    Kepy, Dashboard) ainda cobra a meta num dia de folga. `jaFez` só aparece
-    no resumo da ficha.
+16. **`jaFez` da ficha só aparece no resumo** — não muda plano, meta nem
+    sequência. (A folga de `diasDaSemana` já vale no Cronograma, no foco, no
+    sino, na meta do dia e na sequência.)
 17. **O servidor não valida a ficha** — `profile_data` é JSON livre no
     user-service; o formato é garantido só pelo front (`montarFicha`).
 18. **Aba parada na ficha não sabe que outra a concluiu** — o perfil não

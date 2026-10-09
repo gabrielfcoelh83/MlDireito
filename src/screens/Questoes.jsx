@@ -46,7 +46,7 @@ function Aviso({ s, icone, cor, titulo, texto, acao }) {
   );
 }
 
-export default function Questoes({ theme, s, data, quest, setQuest, registrar, acervo, recarregarAcervo, usuarioTentativas, config, resultados_historico, materiaDeHoje }) {
+export default function Questoes({ theme, s, data, quest, setQuest, registrar, acervo, recarregarAcervo, usuarioTentativas, config, resultados_historico, materiaDeHoje, diasDeEstudo = null }) {
   const [tempoInicio, setTempoInicio] = useState(null);
   // O que é só desta tela, para a questão aberta: as alternativas riscadas e
   // o histórico aberto ou fechado. Guardado com o id da questão, e não em
@@ -101,7 +101,8 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
   const availablePool = materias.length > 0 ? all.filter((q) => materias.includes(chaveDe(q))) : all;
 
   // O quiz tem o tamanho da meta do dia (ver lib/quiz.js), não o das fontes.
-  const meta = metaDiaria(config, usuarioTentativas, resultados_historico);
+  // Com a ficha: na folga o tamanho é o mesmo, mas o rótulo não cobra a meta.
+  const meta = metaDiaria(config, usuarioTentativas, resultados_historico, new Date(), diasDeEstudo);
   const tamanhoAlvo = tamanhoDoQuiz(meta);
   const tamanho = Math.min(tamanhoAlvo, availablePool.length);
 
@@ -311,7 +312,7 @@ export default function Questoes({ theme, s, data, quest, setQuest, registrar, a
         {semQuiz && estado === 'pronto' && all.length > 0 && (
           <div className="entra" data-testid="meta-do-dia" style={{ ...s.card, padding: 28, maxWidth: 640 }}>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '1.2px', textTransform: 'uppercase', color: theme.accent }}>
-              {meta.batida ? 'Meta de hoje batida' : 'Meta de hoje'}
+              {meta.folga ? 'Hoje é folga — bônus' : meta.batida ? 'Meta de hoje batida' : 'Meta de hoje'}
             </div>
             <div data-testid="titulo-da-meta" style={{ ...s.pageTitle, fontSize: 26, marginTop: 8 }}>
               {meta.batida && 'Mais '}{tamanho} {tamanho === 1 ? 'questão' : 'questões'}

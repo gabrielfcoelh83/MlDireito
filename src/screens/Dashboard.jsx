@@ -35,15 +35,25 @@ function EmptyHint({ children }) {
   return <div style={{ fontSize: 12.5, color: '#7a766f', padding: '10px 0', lineHeight: 1.5 }}>{children}</div>;
 }
 
-export default function Dashboard({ theme, s, data, go, dash, setDash, config, usuarioTentativas, resultados_historico, disciplinas, praticarDisciplina, acervo, dificuldades }) {
+export default function Dashboard({ theme, s, data, go, dash, setDash, config, usuarioTentativas, resultados_historico, disciplinas, praticarDisciplina, acervo, dificuldades, diasDeEstudo = null }) {
   const tentativas = usuarioTentativas || {};
   const resultados = resultados_historico || [];
   const questoes = data.QUESTOES || [];
 
   // ---- Métricas (derivadas dos dados reais) ----
   const taxa = taxaDeAcertos(tentativas, resultados, questoes);
-  const streak = sequenciaAtual(tentativas, resultados);
-  const meta = metaDiaria(config || {}, tentativas, resultados);
+  // `diasDeEstudo` da ficha: na folga a meta não é cobrada e a sequência não
+  // quebra (lib/metrics.js). Sem ficha, todos os dias são de estudo.
+  const agora = new Date();
+  const streak = sequenciaAtual(tentativas, resultados, agora, diasDeEstudo);
+  const meta = metaDiaria(config || {}, tentativas, resultados, agora, diasDeEstudo);
+  // O que se responde na folga é bônus: a barra mostra o que foi feito, sem
+  // "faltam".
+  const textoDaMeta = meta.folga
+    ? meta.respondidas > 0
+      ? `Hoje é folga no seu plano — ${meta.respondidas} ${meta.respondidas === 1 ? 'questão respondida' : 'questões respondidas'} de bônus.`
+      : 'Hoje é folga no seu plano — o que responder é bônus.'
+    : meta.batida ? 'Meta de hoje batida.' : `Faltam ${meta.faltam} ${meta.faltam === 1 ? 'questão' : 'questões'} para bater a meta de hoje.`;
 
   const period = dash.period;
   const resultadosPeriodo = filtrarPorPeriodo(resultados, Number(period));
@@ -73,14 +83,16 @@ export default function Dashboard({ theme, s, data, go, dash, setDash, config, u
       sub: taxa.total > 0 ? `${taxa.acertos}/${taxa.total} questões` : 'sem dados ainda',
     },
     {
-      iconWrap: iw('#4A7A4A', '#3E6B3E'), icon: 'trending-up', label: 'Sequência atual',
+      testid: 'card-sequencia', iconWrap: iw('#4A7A4A', '#3E6B3E'), icon: 'trending-up', label: 'Sequência atual',
       value: `${streak.dias} ${streak.dias === 1 ? 'dia' : 'dias'}`,
-      sub: streak.dias > 0 ? 'estudando' : 'comece hoje!',
+      sub: meta.folga ? 'hoje é folga — a sequência não quebra' : streak.dias > 0 ? 'estudando' : 'comece hoje!',
     },
     {
-      iconWrap: iw('#B07A1F', '#94661A'), icon: 'flag', label: 'Meta diária',
+      testid: 'card-meta', iconWrap: iw('#B07A1F', '#94661A'), icon: 'flag', label: 'Meta diária',
       value: `${meta.respondidas}/${meta.meta}`,
-      sub: meta.batida ? '✓ meta batida!' : `faltam ${meta.faltam}`,
+      sub: meta.folga
+        ? meta.respondidas > 0 ? `Folga hoje · +${meta.respondidas} de bônus` : 'Folga hoje'
+        : meta.batida ? '✓ meta batida!' : `faltam ${meta.faltam}`,
     },
   ];
 
@@ -89,7 +101,7 @@ export default function Dashboard({ theme, s, data, go, dash, setDash, config, u
       {/* Cards de topo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
         {stats.map((st, i) => (
-          <div key={i} style={s.card}>
+          <div key={i} data-testid={st.testid} style={s.card}>
             <div style={{ fontSize: 12.5, color: '#7a766f' }}>{st.label}</div>
             <div style={{ ...s.statNum, fontSize: 30, marginTop: 6 }}>{st.value}</div>
             <div style={s.statLabel}>{st.sub}</div>
@@ -106,11 +118,11 @@ export default function Dashboard({ theme, s, data, go, dash, setDash, config, u
           </div>
           <div style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#4f4b45', marginBottom: 8 }}>
-              <span>Meta de hoje</span><span style={{ fontWeight: 700, color: '#1c1b19' }}>{meta.respondidas}/{meta.meta} questões</span>
+              <span>{meta.folga ? 'Folga hoje' : 'Meta de hoje'}</span><span style={{ fontWeight: 700, color: '#1c1b19' }}>{meta.respondidas}/{meta.meta} questões</span>
             </div>
             <div style={s.progressTrack}><div style={{ width: `${meta.pct}%`, height: '100%', background: `linear-gradient(90deg, ${theme.gradA}, ${theme.gradB})`, borderRadius: 5, transition: 'width 320ms var(--ease-out)' }} /></div>
-            <div style={{ fontSize: 12, color: '#7a766f', marginTop: 8 }}>
-              {meta.batida ? 'Meta de hoje batida.' : `Faltam ${meta.faltam} questões para bater a meta de hoje.`}
+            <div data-testid="texto-da-meta" style={{ fontSize: 12, color: '#7a766f', marginTop: 8 }}>
+              {textoDaMeta}
             </div>
           </div>
 
