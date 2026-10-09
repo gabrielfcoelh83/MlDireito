@@ -451,7 +451,9 @@ carrega, com `VITE_GOOGLE_CLIENT_ID` no build — na Vercel e, em dev, no
 roda (o domínio da Vercel e `http://localhost:5173`) tem de estar nas
 "Origens JavaScript autorizadas" do Client ID no Google Cloud.
 
-Conta nova é criada pelo Google na primeira vez. Se o e-mail já tem conta
+Conta nova é criada pelo Google na primeira vez e já entra: o Google confirmou
+o e-mail, então ela nasce ativa e confirmada (sem e-mail de confirmação) e
+cai na ficha de boas-vindas. Se o e-mail já tem conta
 com senha, o Google a **liga e entra** (decisão no auth-service):
 - conta que já confirmou o e-mail: liga e a senha continua valendo;
 - conta que nunca confirmou: a partir de 14/10/2026 o Google assume a
