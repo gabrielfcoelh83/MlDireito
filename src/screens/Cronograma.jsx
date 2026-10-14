@@ -165,7 +165,7 @@ export default function Cronograma({ theme, s, usuarioTentativas, disciplinas, c
         <section style={{ ...s.card, padding: 22 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, marginBottom: 17 }}>
             <div>
-              <div style={{ ...s.sectionTitle, fontFamily: "'Newsreader', Georgia, serif", fontSize: 22, fontWeight: 500 }}>Próximos dias</div>
+              <h2 style={{ ...s.sectionTitle, fontFamily: "'Newsreader', Georgia, serif", fontSize: 22, fontWeight: 500 }}>Próximos dias</h2>
               <div style={{ fontSize: 12, color: '#817b76', marginTop: 4 }}>Uma sugestão que se adapta ao seu desempenho.</div>
             </div>
             <span style={{ fontSize: 11, color: '#817b76' }}>7 dias</span>
@@ -235,7 +235,7 @@ export default function Cronograma({ theme, s, usuarioTentativas, disciplinas, c
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <section style={{ ...s.card, padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ ...s.sectionTitle, fontSize: 14 }}><Icon name="calendar" color={theme.primary} size={17} />Calendário</div>
+              <h2 style={{ ...s.sectionTitle, fontSize: 14 }}><Icon name="calendar" color={theme.primary} size={17} />Calendário</h2>
               <span style={{ fontSize: 12, fontWeight: 650, color: '#3d373b' }}>{calendario.rotulo}</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3, marginTop: 15, textAlign: 'center' }}>
